@@ -16,7 +16,7 @@ if [ "$#" -ge 1 ]; then
   CONFIGS=("$@")
 else
   CONFIGS=(
-    "/data2/lyh/Custom-LLaMA-Factory/train_yaml/stage1_pretrain/qwen_7b_pretrain.yaml"
+    # "/data2/lyh/Custom-LLaMA-Factory/train_yaml/stage1_pretrain/qwen_7b_pretrain.yaml"
     "/data2/lyh/Custom-LLaMA-Factory/train_yaml/stage1_pretrain/qwen_7b_pretrain_with_ts.yaml"
   )
   echo "No YAMLs passed in – using default list:"
@@ -39,9 +39,9 @@ for YAML_FILE in "${CONFIGS[@]}"; do
     SWANLAB_MODE=disabled \
     llamafactory-cli train "$YAML_FILE"
 
-  # Auto-merge LoRA weights
-  echo ">>> Merging LoRA weights for: $YAML_FILE"
-  $PYTHON_CMD auto_merge_lora.py --lora_train_yaml "$YAML_FILE"
+  # # Auto-merge LoRA weights
+  # echo ">>> Merging LoRA weights for: $YAML_FILE"
+  # $PYTHON_CMD auto_merge_lora.py --lora_train_yaml "$YAML_FILE"
 
   # Report per-job duration
   JOB_END=$(date +%s)

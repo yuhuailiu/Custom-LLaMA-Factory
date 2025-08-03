@@ -44,6 +44,7 @@ seed: 42
 
 ### eval
 eval_dataset: ArkTSPretrain80kValid,TypeScriptVal
+eval_on_each_dataset: true
 per_device_eval_batch_size: 4
 eval_strategy: steps
 eval_steps: 40
