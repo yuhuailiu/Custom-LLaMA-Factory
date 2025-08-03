@@ -12,7 +12,7 @@ lora_target: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "d
 deepspeed: examples/deepspeed/ds_z3_config.json
 
 ### dataset
-dataset: ArkTSPretrain80k
+dataset: ArkTSPretrain80kTrain
 template: plain
 cutoff_len: 2048
 # max_samples: 1000000
@@ -21,7 +21,7 @@ preprocessing_num_workers: 16
 dataloader_num_workers: 4
 
 ### output
-output_dir: /data2/lyh/output_models/qwen_7b_lora256_pretrain80k
+output_dir: /data2/lyh/output_models/qwen_7b_lora256_pretrain80kTrain
 logging_steps: 5
 plot_loss: true
 save_steps: 500
@@ -43,8 +43,7 @@ resume_from_checkpoint: null
 seed: 42
 
 ### eval
-val_size: 0.05
-# eval_dataset: perm2k_valid_fixed
+eval_dataset: ArkTSPretrain80kValid,TypeScriptVal
 per_device_eval_batch_size: 4
 eval_strategy: steps
-eval_steps: 20
+eval_steps: 40

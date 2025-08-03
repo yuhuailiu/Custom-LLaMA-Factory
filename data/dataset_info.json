@@ -714,5 +714,29 @@
       "prompt": "content"
     },
     "folder": "python"
+  },
+  "ArkTSPretrain80kTrain":{
+    "file_name": "arkts_full_cleaned_80k_train.json",
+    "columns": {
+      "prompt": "text"
+      }  
+  },
+  "ArkTSPretrain80kValid":{
+    "file_name": "arkts_full_cleaned_80k_val.json",
+    "columns": {
+      "prompt": "text"
+      }  
+  },
+  "ArkTSPretrain80kMixture":{
+    "file_name": "arkts_full_cleaned_80k_mixture.json",
+    "columns": {
+      "prompt": "text"
+      }  
+  },
+  "TypeScriptVal":{
+    "file_name": "formatted_starcode_ts_without_tag_val.json",
+    "columns": {
+      "prompt": "text"
+      }  
   }
 }
