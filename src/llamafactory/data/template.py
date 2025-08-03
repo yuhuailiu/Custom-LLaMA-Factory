@@ -1993,3 +1993,18 @@ register_template(
     format_user=StringFormatter(slots=["<human>:{{content}}\n<bot>:"]),
     format_assistant=StringFormatter(slots=["{{content}}\n"]),
 )
+
+
+register_template(
+    name="plain",
+    format_user=StringFormatter(slots=["{{content}}"]),
+    format_assistant=StringFormatter(slots=["{{content}}"]),
+    format_system=StringFormatter(slots=["{{content}}"]),
+)
+
+register_template(
+    name="plain_eos",
+    format_user=StringFormatter(slots=["{{content}}"]),
+    format_assistant=StringFormatter(slots=["{{content}}", {"eos_token"}, "\n"]),
+    format_system=StringFormatter(slots=["{{content}}"]),
+)
