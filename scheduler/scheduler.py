@@ -7,10 +7,11 @@ import os
 import argparse
 import logging
 from datetime import datetime
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 HOST = '127.0.0.1'
 PORT = 9999
-LOG_FILE = 'scheduler.log'
+LOG_FILE = os.path.join(SCRIPT_DIR, 'scheduler.log')
 
 logging.basicConfig(
     level=logging.INFO,

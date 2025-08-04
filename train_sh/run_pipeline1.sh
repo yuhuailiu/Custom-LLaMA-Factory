@@ -17,7 +17,8 @@ if [ "$#" -ge 1 ]; then
 else
   CONFIGS=(
     # "/data2/lyh/Custom-LLaMA-Factory/train_yaml/stage1_pretrain/qwen_7b_pretrain.yaml"
-    "/data2/lyh/Custom-LLaMA-Factory/train_yaml/stage1_pretrain/qwen_7b_pretrain_with_ts.yaml"
+    # "/data2/lyh/Custom-LLaMA-Factory/train_yaml/stage1_pretrain/qwen_7b_pretrain_with_ts.yaml"
+    "/data2/lyh/Custom-LLaMA-Factory/train_yaml/stage1_pretrain/qwen_7b_pretrain_with_ts_8k_len.yaml"
   )
   echo "No YAMLs passed in – using default list:"
   for y in "${CONFIGS[@]}"; do
