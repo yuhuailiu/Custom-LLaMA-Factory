@@ -6,12 +6,22 @@ import time
 import os
 import argparse
 import logging
+import shutil
+import json
+import re
 from datetime import datetime
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 HOST = '127.0.0.1'
 PORT = 9999
 LOG_FILE = os.path.join(SCRIPT_DIR, 'scheduler.log')
+# Merge settings
+MERGE_SCRIPT = "/data2/lyh/Custom-LLaMA-Factory/scripts/merge_lora_from_yaml.py"
+CONDA_ENV_FOR_MERGE = os.getenv("SCHEDULER_CONDA_ENV", "lyh-lf")
+ # Eval generation and collection
+GEN_EVAL_SCRIPT = "/data2/lyh/Custom-LLaMA-Factory/scripts/gen_eval_from_train_yaml.py"
+COLLECT_EVAL_SCRIPT = "/data2/lyh/Custom-LLaMA-Factory/scripts/collect_eval_results.py"
+EVAL_RESULTS_ROOT = "/data2/lyh/eval_results"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,10 +43,79 @@ class JobScheduler:
         self.termination_delay = 5  # seconds
         self.lock = threading.Lock()
 
-    def log_stream(self, stream, log_level):
+    def log_stream(self, stream, log_level, file_handle=None):
         for line in iter(stream.readline, ''):
             logging.log(log_level, line.strip())
+            if file_handle is not None:
+                try:
+                    file_handle.write(line)
+                    file_handle.flush()
+                except Exception:
+                    pass
         stream.close()
+
+    @staticmethod
+    def _parse_yaml_output_dir(yaml_path: str) -> str:
+        """Lightweight reader to extract output_dir from a YAML file without full dependency requirements."""
+        try:
+            import yaml  # type: ignore
+        except Exception:
+            yaml = None
+
+        if yaml is not None:
+            try:
+                with open(yaml_path, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f)
+                if isinstance(data, dict) and 'output_dir' in data:
+                    return str(data['output_dir'])
+            except Exception:
+                pass
+
+        # Fallback: manual scan
+        with open(yaml_path, 'r', encoding='utf-8') as f:
+            for raw in f:
+                line = raw.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if line.startswith('output_dir:'):
+                    return line.split(':', 1)[1].strip().strip("'\"")
+        raise ValueError(f"Cannot find output_dir in YAML: {yaml_path}")
+
+    @staticmethod
+    def _parse_yaml_command(task_str: str) -> tuple[str, str]:
+        """Parse incoming task string for command and yaml path.
+
+        Accepted formats:
+        - "path/to/config.yaml" -> assumes command 'train'
+        - "train:/abs/path.yaml"
+        - "eval:/abs/path.yaml"
+        """
+        task = task_str.strip()
+        if task.lower().endswith('.yaml'):
+            return 'train', task
+        if ':' in task:
+            prefix, path = task.split(':', 1)
+            prefix = prefix.strip().lower()
+            path = path.strip()
+            if prefix in {'train', 'eval'}:
+                return prefix, path
+        raise ValueError("Unrecognized YAML task format. Use '/path/to.yaml' or 'train:/path/to.yaml' or 'eval:/path/to.yaml'.")
+
+    @staticmethod
+    def _build_job_env(output_dir: str) -> dict:
+        """Build environment for llamafactory CLI to mirror our .sh runs.
+
+        - FORCE_TORCHRUN=1
+        - ASCEND_RT_VISIBLE_DEVICES: inherit or default to 0,1,2,3,4,5,6,7
+        - SWANLAB_MODE: inherit or default to disabled
+        """
+        env = os.environ.copy()
+        env.setdefault("FORCE_TORCHRUN", "1")
+        env.setdefault("ASCEND_RT_VISIBLE_DEVICES", os.getenv("ASCEND_RT_VISIBLE_DEVICES", "0,1,2,3,4,5,6,7"))
+        env.setdefault("SWANLAB_MODE", os.getenv("SWANLAB_MODE", "disabled"))
+        # optional: expose workdir-like hints
+        env.setdefault("LLAMABOARD_WORKDIR", output_dir)
+        return env
 
     def terminate_current_job(self):
         """Send terminate signal to the currently running subprocess and mark for delayed wait."""
@@ -64,26 +143,78 @@ class JobScheduler:
                 start_time = time.time()
 
                 try:
-                    process = subprocess.Popen(
-                        ['bash', script_path],
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        encoding='utf-8',
-                        errors='replace',
-                        bufsize=1
-                    )
+                    # Keep context for optional merge
+                    ran_yaml_task = False
+                    ran_yaml_command = None  # 'train' or 'eval'
+                    ran_yaml_path = None
+                    ran_yaml_out_dir = None
+                    # Determine job type (.sh vs. YAML command)
+                    is_shell = str(script_path).endswith('.sh')
+                    is_yaml_task = str(script_path).endswith('.yaml') or script_path.startswith('train:') or script_path.startswith('eval:')
+
+                    log_file_handle = None
+                    if is_yaml_task:
+                        command, yaml_path = self._parse_yaml_command(script_path)
+                        ran_yaml_task = True
+                        ran_yaml_command = command
+                        ran_yaml_path = yaml_path
+                        out_dir = self._parse_yaml_output_dir(yaml_path)
+                        os.makedirs(out_dir, exist_ok=True)
+                        ran_yaml_out_dir = out_dir
+                        # Copy YAML into output_dir with timestamp to avoid overwrites
+                        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+                        base = os.path.basename(yaml_path)
+                        name, ext = os.path.splitext(base)
+                        copied_yaml = os.path.join(out_dir, f"{name}_{ts}{ext}")
+                        try:
+                            shutil.copy2(yaml_path, copied_yaml)
+                            logging.info(f"Copied YAML to {copied_yaml}")
+                        except Exception as e:
+                            logging.warning(f"Failed to copy YAML to output_dir: {e}")
+
+                        # Open log file in output_dir
+                        log_path = os.path.join(out_dir, f"llamafactory_{command}_{ts}.log")
+                        try:
+                            log_file_handle = open(log_path, 'a', encoding='utf-8')
+                            logging.info(f"Streaming logs to {log_path}")
+                        except Exception as e:
+                            logging.warning(f"Failed to open log file {log_path}: {e}")
+
+                        # Launch llamafactory-cli
+                        process = subprocess.Popen(
+                            ['llamafactory-cli', command, yaml_path],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            encoding='utf-8',
+                            errors='replace',
+                            bufsize=1,
+                            env=self._build_job_env(out_dir),
+                        )
+                    else:
+                        # Fallback: treat as .sh job
+                        # Mirror env for consistency as well
+                        process = subprocess.Popen(
+                            ['bash', script_path],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            encoding='utf-8',
+                            errors='replace',
+                            bufsize=1,
+                            env=self._build_job_env(os.getcwd()),
+                        )
                     # --- Record child process handle ---
                     with self.lock:
                         self.current_process = process
 
                     stdout_thread = threading.Thread(
                         target=self.log_stream,
-                        args=(process.stdout, logging.INFO)
+                        args=(process.stdout, logging.INFO, log_file_handle)
                     )
                     stderr_thread = threading.Thread(
                         target=self.log_stream,
-                        args=(process.stderr, logging.ERROR)
+                        args=(process.stderr, logging.ERROR, log_file_handle)
                     )
                     stdout_thread.start()
                     stderr_thread.start()
@@ -91,6 +222,11 @@ class JobScheduler:
                     return_code = process.wait()
                     stdout_thread.join()
                     stderr_thread.join()
+                    if log_file_handle is not None:
+                        try:
+                            log_file_handle.close()
+                        except Exception:
+                            pass
                     end_time = time.time()
                     total_time = int(end_time - start_time)
 
@@ -98,6 +234,32 @@ class JobScheduler:
                         logging.info(f"--- Job '{script_path}' completed successfully in {total_time} seconds. ---")
                     else:
                         logging.error(f"--- Job '{script_path}' failed with return code {return_code} after {total_time} seconds. ---")
+
+                    # After YAML training finishes, run merge synchronously, then enqueue eval YAML to front, then collect CSV after eval.
+                    if ran_yaml_task and ran_yaml_command == 'train' and ran_yaml_path and ran_yaml_out_dir:
+                        try:
+                            self._run_merge_blocking(ran_yaml_path, ran_yaml_out_dir)
+                        except Exception as me:
+                            logging.warning(f"Merge step raised exception for {ran_yaml_path}: {me}")
+
+                        # Generate eval YAML from training YAML and insert to queue front
+                        try:
+                            eval_yaml_path = self._gen_eval_yaml_blocking(ran_yaml_path)
+                            if eval_yaml_path:
+                                logging.info(f"Enqueue eval (front): {eval_yaml_path}")
+                                # Use 'train' command to run evaluation YAML via training pipeline (do_train: false, do_eval: true)
+                                self._put_front(f"train:{eval_yaml_path}")
+                            else:
+                                logging.warning("Eval YAML generation returned empty path; skipping enqueue.")
+                        except Exception as ge:
+                            logging.warning(f"Eval YAML generation failed for {ran_yaml_path}: {ge}")
+
+                    # After YAML eval finishes, update CSV summary
+                    if ran_yaml_task and ran_yaml_command == 'train' and ran_yaml_path and self._is_eval_yaml(ran_yaml_path):
+                        try:
+                            self._collect_eval_results_blocking()
+                        except Exception as ce:
+                            logging.warning(f"Collect eval results failed: {ce}")
 
                 except Exception as e:
                     logging.error(f"An exception occurred while running job '{script_path}': {e}")
@@ -116,6 +278,124 @@ class JobScheduler:
 
             except queue.Empty:
                 continue
+
+    def _run_merge_blocking(self, yaml_path: str, out_dir: str) -> None:
+        """Run LoRA merge synchronously; failures do not block queue progression beyond this step.
+
+        Command: conda run -n <env> python MERGE_SCRIPT --yaml <yaml_path> --clean_checkpoints
+        """
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_path = os.path.join(out_dir, f"merge_lora_{ts}.log")
+        logging.info(f"Starting merge for {yaml_path}. Logs: {log_path}")
+
+        try:
+            log_file = open(log_path, 'a', encoding='utf-8')
+        except Exception as e:
+            logging.warning(f"Cannot open merge log file {log_path}: {e}")
+            log_file = None
+
+        cmd = [
+            'conda', 'run', '-n', CONDA_ENV_FOR_MERGE,
+            'python', MERGE_SCRIPT, '--yaml', yaml_path, '--clean_checkpoints'
+        ]
+
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                bufsize=1,
+            )
+            t_out = threading.Thread(target=self.log_stream, args=(proc.stdout, logging.INFO, log_file))
+            t_err = threading.Thread(target=self.log_stream, args=(proc.stderr, logging.ERROR, log_file))
+            t_out.start(); t_err.start()
+            rc = proc.wait()
+            t_out.join(); t_err.join()
+            if rc == 0:
+                logging.info(f"Merge finished successfully for {yaml_path}.")
+            else:
+                logging.warning(f"Merge exited with code {rc} for {yaml_path} (continuing queue).")
+        except Exception as e:
+            logging.warning(f"Merge process failed to start or crashed for {yaml_path}: {e}")
+        finally:
+            if log_file is not None:
+                try:
+                    log_file.close()
+                except Exception:
+                    pass
+
+    def _run_python_in_env(self, args: list[str]) -> tuple[int, str, str]:
+        """Run a python command inside the configured conda env and capture output."""
+        cmd = ['conda', 'run', '-n', CONDA_ENV_FOR_MERGE, 'python'] + args
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+        )
+        out, err = proc.communicate()
+        return proc.returncode, out, err
+
+    def _gen_eval_yaml_blocking(self, train_yaml_path: str) -> str:
+        """Generate eval YAML using our helper script and return its absolute path."""
+        rc, out, err = self._run_python_in_env([GEN_EVAL_SCRIPT, '--train_yaml', train_yaml_path])
+        if rc != 0:
+            raise RuntimeError(f"gen_eval_from_train_yaml failed: rc={rc}, stderr={err.strip()}")
+        # Extract JSON summary printed by the script; parse last JSON object
+        generated = ""
+        try:
+            # try fast path
+            summary = json.loads(out)
+            generated = summary.get('generated_eval_yaml', '')
+        except Exception:
+            try:
+                # fallback: find last JSON object in the text
+                matches = re.findall(r"\{[\s\S]*?\}\s*$", out, flags=re.MULTILINE)
+                if matches:
+                    summary = json.loads(matches[-1])
+                    generated = summary.get('generated_eval_yaml', '')
+            except Exception:
+                pass
+        if not generated:
+            logging.debug(f"gen_eval stdout:\n{out}")
+            logging.debug(f"gen_eval stderr:\n{err}")
+            raise RuntimeError("Could not parse generated eval YAML path from script output")
+        return generated
+
+    def _collect_eval_results_blocking(self) -> None:
+        """Run the results collector to refresh the summary CSV."""
+        rc, out, err = self._run_python_in_env([COLLECT_EVAL_SCRIPT, '--root', EVAL_RESULTS_ROOT])
+        if rc != 0:
+            raise RuntimeError(f"collect_eval_results failed: rc={rc}, stderr={err.strip()}")
+        try:
+            logging.info(f"Collect results: {out.strip()}")
+        except Exception:
+            pass
+
+    def _put_front(self, task: str) -> None:
+        """Insert a job to the front of the queue (priority)."""
+        # NOTE: access to underlying deque is not part of public API but works in practice
+        with self.job_queue.mutex:
+            self.job_queue.queue.appendleft(task)
+            self.job_queue.unfinished_tasks += 1
+            self.job_queue.not_empty.notify()
+
+    @staticmethod
+    def _is_eval_yaml(yaml_path: str) -> bool:
+        try:
+            base = os.path.basename(yaml_path)
+            if base.startswith('EVAL_'):
+                return True
+            # heuristic: resides in an eval yaml dir
+            parts = os.path.normpath(yaml_path).split(os.sep)
+            return 'eval' in parts
+        except Exception:
+            return False
 
     def server_thread(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -151,15 +431,35 @@ class JobScheduler:
                             conn.sendall(msg.encode('utf-8'))
 
                         else:
-                            # Submit new job
-                            script_path = data
-                            if os.path.exists(script_path) and script_path.endswith('.sh'):
-                                self.job_queue.put(script_path)
-                                msg = f"✅ Job '{script_path}' submitted successfully. It's position #{self.job_queue.qsize()} in the queue."
+                            # Submit new job (.sh or YAML task)
+                            task = data
+                            accept = False
+                            reason = ""
+                            if task.endswith('.sh') and os.path.exists(task):
+                                accept = True
+                            elif task.endswith('.yaml') and os.path.exists(task):
+                                accept = True
+                            elif ':' in task:
+                                try:
+                                    prefix, path = task.split(':', 1)
+                                    prefix = prefix.strip().lower()
+                                    path = path.strip()
+                                    if prefix in {'train', 'eval'} and os.path.exists(path) and path.endswith('.yaml'):
+                                        accept = True
+                                    else:
+                                        reason = "Prefix not in {train,eval} or YAML path invalid."
+                                except Exception as e:
+                                    reason = f"Bad task format: {e}"
+                            else:
+                                reason = "Unknown task format. Submit a .sh, .yaml, or 'train:/path.yaml'/'eval:/path.yaml'."
+
+                            if accept:
+                                self.job_queue.put(task)
+                                msg = f"✅ Job '{task}' submitted successfully. It's position #{self.job_queue.qsize()} in the queue."
                                 logging.info(msg)
                                 conn.sendall(msg.encode('utf-8'))
                             else:
-                                msg = f"❌ Error: Script '{script_path}' not found or is not a .sh file."
+                                msg = f"❌ Error: Task '{task}' not accepted. {reason}"
                                 logging.warning(msg)
                                 conn.sendall(msg.encode('utf-8'))
 
@@ -181,15 +481,38 @@ class JobScheduler:
             self.is_running = False
 
 # === Client 部分：增加 kill 命令 ===
-def submit_job(script_path):
-    abs_path = os.path.abspath(script_path)
-    if not os.path.exists(abs_path) or not abs_path.endswith('.sh'):
-        print(f"❌ Error: Script '{abs_path}' not found or is not a .sh file.")
+def submit_job(task_str):
+    # Accept .sh, .yaml, or prefixed command like 'train:/path.yaml'
+    if task_str.endswith('.sh'):
+        abs_path = os.path.abspath(task_str)
+        if not os.path.exists(abs_path):
+            print(f"❌ Error: Script '{abs_path}' not found.")
+            return
+        payload = abs_path
+    elif task_str.endswith('.yaml'):
+        abs_path = os.path.abspath(task_str)
+        if not os.path.exists(abs_path):
+            print(f"❌ Error: YAML '{abs_path}' not found.")
+            return
+        payload = abs_path
+    elif ':' in task_str:
+        prefix, path = task_str.split(':', 1)
+        path = path.strip()
+        if prefix.strip().lower() not in {'train', 'eval'}:
+            print("❌ Error: Prefix must be 'train' or 'eval'.")
+            return
+        abs_path = os.path.abspath(path)
+        if not os.path.exists(abs_path) or not abs_path.endswith('.yaml'):
+            print(f"❌ Error: YAML '{abs_path}' not found or not a .yaml file.")
+            return
+        payload = f"{prefix}:{abs_path}"
+    else:
+        print("❌ Error: Unsupported task. Provide a .sh, .yaml, or 'train:/path.yaml'/'eval:/path.yaml'.")
         return
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.connect((HOST, PORT))
-            s.sendall(abs_path.encode('utf-8'))
+            s.sendall(payload.encode('utf-8'))
             print(s.recv(1024).decode('utf-8'))
     except ConnectionRefusedError:
         print(f"❌ Error: Could not connect to the scheduler service on {HOST}:{PORT}. Is it running?")
@@ -219,8 +542,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="A simple sequential job scheduler for shell scripts.")
     subparsers = parser.add_subparsers(dest='command', required=True)
     subparsers.add_parser('start', help='Start the scheduler service in the foreground.')
-    submit_parser = subparsers.add_parser('submit', help='Submit a shell script to the queue.')
-    submit_parser.add_argument('script_path', type=str, help='The path to the .sh script to execute.')
+    submit_parser = subparsers.add_parser('submit', help='Submit a shell script or a YAML task to the queue.')
+    submit_parser.add_argument('task', type=str, help="Path to .sh/.yaml, or 'train:/abs/config.yaml'/'eval:/abs/config.yaml'.")
     subparsers.add_parser('status', help='Check the current status of the scheduler.')
     subparsers.add_parser('kill', help='Terminate the currently running job.')  # Added kill
 
@@ -229,7 +552,7 @@ if __name__ == '__main__':
         scheduler = JobScheduler()
         scheduler.start()
     elif args.command == 'submit':
-        submit_job(args.script_path)
+        submit_job(args.task)
     elif args.command == 'status':
         get_status()
     elif args.command == 'kill':

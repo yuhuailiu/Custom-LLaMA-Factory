@@ -733,8 +733,62 @@
       "prompt": "text"
       }  
   },
+  "ArktsL2RTrain1M": {	
+    "file_name": "./arkts/L2R_train_1000k.jsonl",
+    "columns": {
+      "prompt": "text"
+      }  
+  },
+  "ArktsL2RTrain20M": {
+    "file_name": "./arkts/L2R_train_20000k.jsonl",
+    "columns": {
+      "prompt": "text"
+      }  
+  },
+  "ArktsL2RTrain50M": {
+    "file_name": "./arkts/L2R_train_50000k.jsonl",
+    "columns": {
+      "prompt": "text"
+      }  
+  },
+  "ArktsL2RTrainFull": {
+    "file_name": "./arkts/L2R_train_fullk.jsonl",
+    "columns": {
+      "prompt": "text"
+      }  
+  },
+  "ArktsTest": {
+    "file_name": "./arkts/L2R_test.jsonl",
+    "columns": {
+      "prompt": "text"
+      }  
+  },
+  "ArktsVal": {
+    "file_name": "./arkts/L2R_valid.jsonl",
+    "columns": {
+      "prompt": "text"
+      }  
+  },
   "TypeScriptVal":{
-    "file_name": "formatted_starcode_ts_without_tag_val.json",
+    "file_name": "ts_val_upload.jsonl",
+    "columns": {
+      "prompt": "text"
+      }
+  },
+  "TypeScriptTest":{
+    "file_name": "ts_test_upload.jsonl",
+    "columns": {
+      "prompt": "text"
+      }  
+  },
+  "PythonVal":{
+    "file_name": "py_val_upload.jsonl",
+    "columns": {
+      "prompt": "text"
+      }  
+  },
+  "PythonTest":{
+    "file_name": "py_test_upload.jsonl",
     "columns": {
       "prompt": "text"
       }  

@@ -1,0 +1,30 @@
+### model
+model_name_or_path: /data2/lyh/base_model/Qwen2.5-Coder-7B
+trust_remote_code: true
+
+### method
+stage: pt
+do_train: false
+do_eval: true
+finetuning_type: lora          # 全参评估也可留着，不影响
+deepspeed: examples/deepspeed/ds_z3_config.json
+
+### dataset
+# 方式1：在 data/dataset_info.json 里注册一个名字（见下文），这里直接引用：
+eval_dataset: ArktsTest, TypeScriptTest
+eval_on_each_dataset: true
+template: plain                 # 预训练/纯文本用 plain
+cutoff_len: 2048
+packing: true                   # 和训练一致；大样本更快
+# neat_packing: true              # 避免跨样本污染的更严谨打包
+overwrite_cache: true
+preprocessing_num_workers: 16
+
+### eval
+per_device_eval_batch_size: 4
+compute_accuracy: true          # 可选：顺便算 token-level accuracy
+ddp_timeout: 180000000
+
+### output
+output_dir: /data2/lyh/eval_results/Qwen2.5-Coder-7B
+overwrite_output_dir: true

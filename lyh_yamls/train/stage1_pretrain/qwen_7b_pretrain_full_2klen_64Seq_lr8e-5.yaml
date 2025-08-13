@@ -1,0 +1,48 @@
+
+### model
+model_name_or_path: /data2/lyh/base_model/Qwen2.5-Coder-7B
+trust_remote_code: true
+
+### method
+stage: pt
+do_train: true
+finetuning_type: full
+deepspeed: examples/deepspeed/ds_z3_config.json
+
+### dataset
+dataset: ArktsL2RTrainFull
+template: plain
+cutoff_len: 2048
+# max_samples: 1000000
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 4
+
+### output
+output_dir: /data2/lyh/output_models/qwen_7b_full_pretrainFull_2klen_64Seq_lr8e-5
+logging_steps: 5
+plot_loss: true
+save_steps: 500
+overwrite_output_dir: true
+save_only_model: false
+report_to: tensorboard
+
+### train
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 2  
+learning_rate: 8e-5
+num_train_epochs: 1
+lr_scheduler_type: cosine
+warmup_ratio: 0.01
+bf16: true
+weight_decay: 0.01
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+seed: 42
+
+### eval
+eval_dataset: ArktsVal, TypeScriptVal
+eval_on_each_dataset: true
+per_device_eval_batch_size: 2
+eval_strategy: steps
+eval_steps: 40
