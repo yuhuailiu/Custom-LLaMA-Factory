@@ -11,7 +11,7 @@ deepspeed: examples/deepspeed/ds_z3_config.json
 
 ### dataset
 # 方式1：在 data/dataset_info.json 里注册一个名字（见下文），这里直接引用：
-eval_dataset: ArktsTest, TypeScriptTest
+eval_dataset: ArktsTest, TypeScriptTest, ArktsTestWithHeader, TypeScriptTestWithHeader
 eval_on_each_dataset: true
 template: plain                 # 预训练/纯文本用 plain
 cutoff_len: 2048

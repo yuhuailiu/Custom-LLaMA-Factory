@@ -82,6 +82,42 @@ class JobScheduler:
         raise ValueError(f"Cannot find output_dir in YAML: {yaml_path}")
 
     @staticmethod
+    def _parse_yaml_do_train(yaml_path: str):
+        """Return the boolean of do_train in YAML if present, else None."""
+        try:
+            import yaml  # type: ignore
+        except Exception:
+            yaml = None
+
+        if yaml is not None:
+            try:
+                with open(yaml_path, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f)
+                if isinstance(data, dict) and 'do_train' in data:
+                    val = data['do_train']
+                    if isinstance(val, bool):
+                        return val
+            except Exception:
+                pass
+        # Fallback: manual scan
+        try:
+            with open(yaml_path, 'r', encoding='utf-8') as f:
+                for raw in f:
+                    line = raw.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    if line.startswith('do_train:'):
+                        token = line.split(':', 1)[1].strip().strip('\'"')
+                        if token.lower() in {'true', '1', 'yes', 'y'}:
+                            return True
+                        if token.lower() in {'false', '0', 'no', 'n'}:
+                            return False
+                        break
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
     def _parse_yaml_command(task_str: str) -> tuple[str, str]:
         """Parse incoming task string for command and yaml path.
 
@@ -148,13 +184,21 @@ class JobScheduler:
                     ran_yaml_command = None  # 'train' or 'eval'
                     ran_yaml_path = None
                     ran_yaml_out_dir = None
-                    # Determine job type (.sh vs. YAML command)
-                    is_shell = str(script_path).endswith('.sh')
-                    is_yaml_task = str(script_path).endswith('.yaml') or script_path.startswith('train:') or script_path.startswith('eval:')
-
+                    # Determine job type (.sh vs. YAML task) with robust parse-first approach
                     log_file_handle = None
+                    yaml_do_train = None  # type: ignore[var-annotated]
+                    try:
+                        # Attempt to parse as YAML task (supports 'train:/path.yaml', 'eval:/path.yaml', or '/path.yaml')
+                        command, yaml_path = self._parse_yaml_command(str(script_path).strip())
+                        is_yaml_task = True
+                        try:
+                            yaml_do_train = self._parse_yaml_do_train(yaml_path)
+                        except Exception:
+                            yaml_do_train = None
+                    except Exception:
+                        is_yaml_task = False
+
                     if is_yaml_task:
-                        command, yaml_path = self._parse_yaml_command(script_path)
                         ran_yaml_task = True
                         ran_yaml_command = command
                         ran_yaml_path = yaml_path
@@ -192,10 +236,9 @@ class JobScheduler:
                             env=self._build_job_env(out_dir),
                         )
                     else:
-                        # Fallback: treat as .sh job
-                        # Mirror env for consistency as well
+                        # Fallback: treat as .sh job; Mirror env for consistency as well
                         process = subprocess.Popen(
-                            ['bash', script_path],
+                            ['bash', str(script_path).strip()],
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
                             text=True,
@@ -235,31 +278,45 @@ class JobScheduler:
                     else:
                         logging.error(f"--- Job '{script_path}' failed with return code {return_code} after {total_time} seconds. ---")
 
-                    # After YAML training finishes, run merge synchronously, then enqueue eval YAML to front, then collect CSV after eval.
-                    if ran_yaml_task and ran_yaml_command == 'train' and ran_yaml_path and ran_yaml_out_dir:
-                        try:
-                            self._run_merge_blocking(ran_yaml_path, ran_yaml_out_dir)
-                        except Exception as me:
-                            logging.warning(f"Merge step raised exception for {ran_yaml_path}: {me}")
-
-                        # Generate eval YAML from training YAML and insert to queue front
-                        try:
-                            eval_yaml_path = self._gen_eval_yaml_blocking(ran_yaml_path)
-                            if eval_yaml_path:
-                                logging.info(f"Enqueue eval (front): {eval_yaml_path}")
-                                # Use 'train' command to run evaluation YAML via training pipeline (do_train: false, do_eval: true)
-                                self._put_front(f"train:{eval_yaml_path}")
+                    # Decide what just ran based on do_train flag; fallback to prefix/heuristic if missing
+                    if ran_yaml_task and ran_yaml_path:
+                        is_train_run = False
+                        is_eval_run = False
+                        if yaml_do_train is True:
+                            is_train_run = True
+                        elif yaml_do_train is False:
+                            is_eval_run = True
+                        else:
+                            # Fallback: use command and filename heuristics
+                            if ran_yaml_command == 'eval' or self._is_eval_yaml(ran_yaml_path):
+                                is_eval_run = True
                             else:
-                                logging.warning("Eval YAML generation returned empty path; skipping enqueue.")
-                        except Exception as ge:
-                            logging.warning(f"Eval YAML generation failed for {ran_yaml_path}: {ge}")
+                                is_train_run = True
 
-                    # After YAML eval finishes, update CSV summary
-                    if ran_yaml_task and ran_yaml_command == 'train' and ran_yaml_path and self._is_eval_yaml(ran_yaml_path):
-                        try:
-                            self._collect_eval_results_blocking()
-                        except Exception as ce:
-                            logging.warning(f"Collect eval results failed: {ce}")
+                        if is_train_run and ran_yaml_out_dir:
+                            # After training: merge (for lora) and enqueue eval
+                            try:
+                                self._run_merge_blocking(ran_yaml_path, ran_yaml_out_dir)
+                            except Exception as me:
+                                logging.warning(f"Merge step raised exception for {ran_yaml_path}: {me}")
+
+                            try:
+                                eval_yaml_path = self._gen_eval_yaml_blocking(ran_yaml_path)
+                                if eval_yaml_path:
+                                    logging.info(f"Enqueue eval (front): {eval_yaml_path}")
+                                    # Use 'train' command to run evaluation YAML via training pipeline (do_train: false, do_eval: true)
+                                    self._put_front(f"{eval_yaml_path}")
+                                else:
+                                    logging.warning("Eval YAML generation returned empty path; skipping enqueue.")
+                            except Exception as ge:
+                                logging.warning(f"Eval YAML generation failed for {ran_yaml_path}: {ge}")
+
+                        if is_eval_run:
+                            # After evaluation: refresh CSV summary
+                            try:
+                                self._collect_eval_results_blocking()
+                            except Exception as ce:
+                                logging.warning(f"Collect eval results failed: {ce}")
 
                 except Exception as e:
                     logging.error(f"An exception occurred while running job '{script_path}': {e}")

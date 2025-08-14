@@ -736,23 +736,41 @@
   "ArktsL2RTrain1M": {	
     "file_name": "./arkts/L2R_train_1000k.jsonl",
     "columns": {
-      "prompt": "text"
+      "prompt": "llm_formatted"
+      }  
+  },
+  "ArktsL2RTrain1MWithHeader": {
+    "file_name": "./arkts/L2R_train_1000k_with_header.jsonl",
+    "columns": {
+      "prompt": "llm_formatted"
       }  
   },
   "ArktsL2RTrain20M": {
     "file_name": "./arkts/L2R_train_20000k.jsonl",
     "columns": {
-      "prompt": "text"
+      "prompt": "llm_formatted"
+      }  
+  },
+  "ArktsL2RTrain20MWithHeader": {
+    "file_name": "./arkts/L2R_train_20000k_with_header.jsonl",
+    "columns": {
+      "prompt": "llm_formatted"
       }  
   },
   "ArktsL2RTrain50M": {
     "file_name": "./arkts/L2R_train_50000k.jsonl",
     "columns": {
-      "prompt": "text"
+      "prompt": "llm_formatted"
       }  
   },
   "ArktsL2RTrainFull": {
     "file_name": "./arkts/L2R_train_fullk.jsonl",
+    "columns": {
+      "prompt": "llm_formatted"
+      }  
+  },
+  "ArktsFIMTrainFull": {
+    "file_name": "./arkts/L2R_train_fullk_FIM.jsonl",
     "columns": {
       "prompt": "text"
       }  
@@ -763,6 +781,12 @@
       "prompt": "text"
       }  
   },
+  "ArktsTestWithHeader": {
+    "file_name": "./arkts/L2R_test_with_header.jsonl",
+    "columns": {
+      "prompt": "llm_formatted"
+      }  
+  },
   "ArktsVal": {
     "file_name": "./arkts/L2R_valid.jsonl",
     "columns": {
@@ -771,6 +795,36 @@
   },
   "TypeScriptVal":{
     "file_name": "ts_val_upload.jsonl",
+    "columns": {
+      "prompt": "text"
+      }
+  },
+  "TypeScriptTrain":{
+    "file_name": "ts_train_sub30k_cleaned.jsonl",
+    "columns": {
+      "prompt": "text"
+      }
+  },
+  "TypeScriptTrainWithHeader":{
+    "file_name": "ts_train_sub30k_cleaned_with_header.jsonl",
+    "columns": {
+      "prompt": "text"
+      }
+  },
+  "TypeScriptTrainFIM":{
+    "file_name": "ts_train_sub30k_cleaned_FIM.jsonl",
+    "columns": {
+      "prompt": "text"
+      }
+  },
+  "TypeScriptValWithHeader":{
+    "file_name": "ts_val_upload_with_header.jsonl",
+    "columns": {
+      "prompt": "text"
+      }
+  },
+  "TypeScriptTestWithHeader":{
+    "file_name": "ts_test_upload_with_header.jsonl",
     "columns": {
       "prompt": "text"
       }

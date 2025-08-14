@@ -164,7 +164,11 @@ class DataArguments:
             if self.dataset is not None and len(self.dataset) != len(self.interleave_probs):
                 raise ValueError("The length of dataset and interleave probs should be identical.")
 
-            if self.eval_dataset is not None and len(self.eval_dataset) != len(self.interleave_probs):
+            if (
+                self.eval_dataset is not None
+                and (not self.eval_on_each_dataset)
+                and len(self.eval_dataset) != len(self.interleave_probs)
+            ):
                 raise ValueError("The length of eval dataset and interleave probs should be identical.")
 
         if self.streaming and self.val_size > 1e-6 and self.val_size < 1:
