@@ -320,3 +320,383 @@ class KTODataCollatorWithPadding(MultiModalDataCollatorForSeq2Seq):
 
         batch["kto_tags"] = torch.tensor(kto_tags)
         return batch
+
+
+@dataclass
+class CustomDataCollatorWithLogging(MultiModalDataCollatorForSeq2Seq):
+    r"""Custom data collator that logs the order of samples during training.
+    
+    This collator extends MultiModalDataCollatorForSeq2Seq to record sample IDs
+    and batch information for debugging and reproducibility purposes.
+    """
+    
+    log_sample_order: bool = True
+    log_file: str = "training_sample_order.log"
+    detailed_log_file: str = "detailed_sample_order.json"
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.sample_order_log = []
+        self.batch_count = 0
+        
+        # 创建日志目录（如果不存在）
+        import os
+        log_dir = os.path.dirname(self.log_file)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+    
+    def __call__(self, features: list[dict[str, Any]]) -> dict[str, "torch.Tensor"]:     
+        if self.log_sample_order:
+            self._log_batch_info(features)
+        
+        # 调用父类方法处理数据
+        return super().__call__(features)
+    
+    def _log_batch_info(self, features: list[dict[str, Any]]) -> None:
+        """记录当前batch的样本信息"""
+        batch_ids = []
+        batch_metadata = []
+        
+        for i, feature in enumerate(features):
+            # 提取样本ID（支持多种可能的字段名）
+            sample_id = None
+            for id_field in ['id', 'sample_id', 'example_id', 'index']:
+                if id_field in feature:
+                    sample_id = feature[id_field]
+                    break
+            
+            if sample_id is None:
+                sample_id = f"unknown_{i}"
+            
+            batch_ids.append(sample_id)
+            
+            # 记录其他元数据
+            metadata = {
+                'id': sample_id,
+                'input_length': len(feature.get('input_ids', [])),
+                'label_length': len(feature.get('labels', [])),
+                'has_images': bool(feature.get('images')),
+                'has_videos': bool(feature.get('videos')),
+                'has_audios': bool(feature.get('audios'))
+            }
+            batch_metadata.append(metadata)
+        
+        self.batch_count += 1
+        
+        # 记录到内存
+        batch_info = {
+            'batch_index': self.batch_count,
+            'batch_size': len(features),
+            'sample_ids': batch_ids,
+            'metadata': batch_metadata,
+            'timestamp': self._get_timestamp()
+        }
+        self.sample_order_log.append(batch_info)
+        
+        # 写入实时日志文件
+        self._write_realtime_log(batch_info)
+    
+    def _get_timestamp(self) -> str:
+        """获取当前时间戳"""
+        from datetime import datetime
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    def _write_realtime_log(self, batch_info: dict) -> None:
+        """写入实时日志"""
+        try:
+            with open(self.log_file, 'a', encoding='utf-8') as f:
+                f.write(f"[{batch_info['timestamp']}] Batch {batch_info['batch_index']}: "
+                       f"Size={batch_info['batch_size']}, IDs={batch_info['sample_ids']}\n")
+        except Exception as e:
+            print(f"Warning: Failed to write to log file {self.log_file}: {e}")
+    
+    def get_sample_order_log(self) -> list[dict]:
+        """获取样本顺序日志"""
+        return self.sample_order_log
+    
+    def save_detailed_log(self, filename: str = None) -> None:
+        """保存详细的样本顺序日志"""
+        if filename is None:
+            filename = self.detailed_log_file
+        
+        if not self.sample_order_log:
+            print("No sample order log to save.")
+            return
+        
+        try:
+            import json
+            detailed_log = {
+                'summary': {
+                    'total_batches': len(self.sample_order_log),
+                    'total_samples': sum(batch['batch_size'] for batch in self.sample_order_log),
+                    'log_file': self.log_file,
+                    'created_at': self._get_timestamp()
+                },
+                'batches': self.sample_order_log
+            }
+            
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(detailed_log, f, indent=2, ensure_ascii=False)
+            
+            print(f"详细日志已保存到: {filename}")
+            print(f"总批次数: {len(self.sample_order_log)}")
+            print(f"总样本数: {sum(batch['batch_size'] for batch in self.sample_order_log)}")
+            
+        except Exception as e:
+            print(f"Error saving detailed log: {e}")
+    
+    def clear_log(self) -> None:
+        """清空日志"""
+        self.sample_order_log = []
+        self.batch_count = 0
+        print("Sample order log cleared.")
+    
+    def get_statistics(self) -> dict:
+        """获取日志统计信息"""
+        if not self.sample_order_log:
+            return {}
+        
+        total_batches = len(self.sample_order_log)
+        total_samples = sum(batch['batch_size'] for batch in self.sample_order_log)
+        
+        # 统计样本ID分布
+        id_counts = {}
+        for batch in self.sample_order_log:
+            for sample_id in batch['sample_ids']:
+                id_counts[sample_id] = id_counts.get(sample_id, 0) + 1
+        
+        return {
+            'total_batches': total_batches,
+            'total_samples': total_samples,
+            'unique_sample_ids': len(id_counts),
+            'most_frequent_samples': sorted(id_counts.items(), key=lambda x: x[1], reverse=True)[:10],
+            'average_batch_size': total_samples / total_batches if total_batches > 0 else 0
+        }
+
+
+@dataclass
+class LoggingPairwiseDataCollator(CustomDataCollatorWithLogging):
+    r"""Data collator for pairwise data with logging capability."""
+    
+    def __call__(self, features: list[dict[str, Any]]) -> dict[str, "torch.Tensor"]:
+        if self.log_sample_order:
+            self._log_batch_info(features)
+        
+        # 调用PairwiseDataCollatorWithPadding的逻辑
+        concatenated_features = []
+        for key in ("chosen", "rejected"):
+            for feature in features:
+                target_feature = {
+                    "input_ids": feature[f"{key}_input_ids"],
+                    "attention_mask": feature[f"{key}_attention_mask"],
+                    "labels": feature[f"{key}_labels"],
+                    "images": feature["images"],
+                    "videos": feature["videos"],
+                    "audios": feature["audios"],
+                }
+                concatenated_features.append(target_feature)
+        
+        return super(CustomDataCollatorWithLogging, self).__call__(concatenated_features)
+
+
+@dataclass
+class LoggingKTODataCollator(CustomDataCollatorWithLogging):
+    r"""Data collator for KTO data with logging capability."""
+    
+    def __call__(self, features: list[dict[str, Any]]) -> dict[str, "torch.Tensor"]:
+        if self.log_sample_order:
+            self._log_batch_info(features)
+        
+        # 调用KTODataCollatorWithPadding的逻辑
+        target_features = []
+        kl_features = []
+        kto_tags = []
+        for feature in features:
+            target_feature = {
+                "input_ids": feature["input_ids"],
+                "attention_mask": feature["attention_mask"],
+                "labels": feature["labels"],
+                "images": feature["images"],
+                "videos": feature["videos"],
+                "audios": feature["audios"],
+            }
+            kl_feature = {
+                "input_ids": feature["kl_input_ids"],
+                "attention_mask": feature["kl_attention_mask"],
+                "labels": feature["kl_labels"],
+                "images": feature["images"],
+                "videos": feature["videos"],
+                "audios": feature["audios"],
+            }
+            target_features.append(target_feature)
+            kl_features.append(kl_feature)
+            kto_tags.append(feature["kto_tags"])
+        
+        batch = super(CustomDataCollatorWithLogging, self).__call__(target_features)
+        kl_batch = super(CustomDataCollatorWithLogging, self).__call__(kl_features)
+        batch["kl_input_ids"] = kl_batch["input_ids"]
+        batch["kl_attention_mask"] = kl_batch["attention_mask"]
+        batch["kl_labels"] = kl_batch["labels"]
+        if "cross_attention_mask" in kl_batch:  # for mllama inputs
+            batch["kl_cross_attention_mask"] = kl_batch["cross_attention_mask"]
+        
+        if "token_type_ids" in kl_batch:
+            batch["kl_token_type_ids"] = kl_batch["token_type_ids"]
+        
+        batch["kto_tags"] = torch.tensor(kto_tags)
+        return batch
+
+
+@dataclass
+class LoggingSFTDataCollator(SFTDataCollatorWith4DAttentionMask):
+    r"""Data collator for SFT training with sample order logging capability.
+    
+    This collator extends SFTDataCollatorWith4DAttentionMask to add logging
+    while preserving all SFT-specific functionality.
+    """
+    
+    log_sample_order: bool = True
+    log_file: str = "training_sample_order.log"
+    detailed_log_file: str = "detailed_sample_order.json"
+    
+    def __post_init__(self):
+        super().__post_init__()
+        self.sample_order_log = []
+        self.batch_count = 0
+        
+        # 创建日志目录（如果不存在）
+        import os
+        log_dir = os.path.dirname(self.log_file)
+        if log_dir and not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+    
+    def __call__(self, features: list[dict[str, Any]]) -> dict[str, "torch.Tensor"]:
+        if self.log_sample_order:
+            self._log_batch_info(features)
+        
+        # 调用父类方法处理数据（包括4D注意力掩码等SFT特定功能）
+        return super().__call__(features)
+    
+    def _log_batch_info(self, features: list[dict[str, Any]]) -> None:
+        """记录当前batch的样本信息"""
+        batch_ids = []
+        batch_metadata = []
+        
+        for i, feature in enumerate(features):
+            # 提取样本ID（支持多种可能的字段名）
+            sample_id = None
+            
+            # 首先检查预处理后的字段
+            for id_field in ['_id', 'id', 'sample_id', 'example_id', 'index']:
+                if id_field in feature:
+                    sample_id = feature[id_field]
+                    break
+            
+            # 如果没有找到ID，使用索引
+            if sample_id is None:
+                sample_id = f"unknown_{i}"
+            
+            batch_ids.append(sample_id)
+            
+            # 记录其他元数据
+            metadata = {
+                'id': sample_id,
+                'input_length': len(feature.get('input_ids', [])),
+                'label_length': len(feature.get('labels', [])),
+                'has_images': bool(feature.get('images')),
+                'has_videos': bool(feature.get('videos')),
+                'has_audios': bool(feature.get('audios'))
+            }
+            batch_metadata.append(metadata)
+        
+        self.batch_count += 1
+        
+        # 记录到内存
+        batch_info = {
+            'batch_index': self.batch_count,
+            'batch_size': len(features),
+            'sample_ids': batch_ids,
+            'metadata': batch_metadata,
+            'timestamp': self._get_timestamp()
+        }
+        self.sample_order_log.append(batch_info)
+        
+        # 写入实时日志文件
+        self._write_realtime_log(batch_info)
+    
+    def _get_timestamp(self) -> str:
+        """获取当前时间戳"""
+        from datetime import datetime
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    def _write_realtime_log(self, batch_info: dict) -> None:
+        """写入实时日志"""
+        try:
+            with open(self.log_file, 'a', encoding='utf-8') as f:
+                f.write(f"[{batch_info['timestamp']}] Batch {batch_info['batch_index']}: "
+                       f"Size={batch_info['batch_size']}, IDs={batch_info['sample_ids']}\n")
+        except Exception as e:
+            print(f"Warning: Failed to write to log file {self.log_file}: {e}")
+    
+    def get_sample_order_log(self) -> list[dict]:
+        """获取样本顺序日志"""
+        return self.sample_order_log
+    
+    def save_detailed_log(self, filename: str = None) -> None:
+        """保存详细的样本顺序日志"""
+        if filename is None:
+            filename = self.detailed_log_file
+        
+        if not self.sample_order_log:
+            print("No sample order log to save.")
+            return
+        
+        try:
+            import json
+            detailed_log = {
+                'summary': {
+                    'total_batches': len(self.sample_order_log),
+                    'total_samples': sum(batch['batch_size'] for batch in self.sample_order_log),
+                    'log_file': self.log_file,
+                    'created_at': self._get_timestamp()
+                },
+                'batches': self.sample_order_log
+            }
+            
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(detailed_log, f, indent=2, ensure_ascii=False)
+            
+            print(f"详细日志已保存到: {filename}")
+            print(f"总批次数: {len(self.sample_order_log)}")
+            print(f"总样本数: {sum(batch['batch_size'] for batch in self.sample_order_log)}")
+            
+        except Exception as e:
+            print(f"Error saving detailed log: {e}")
+    
+    def clear_log(self) -> None:
+        """清空日志"""
+        self.sample_order_log = []
+        self.batch_count = 0
+        print("Sample order log cleared.")
+    
+    def get_statistics(self) -> dict:
+        """获取日志统计信息"""
+        if not self.sample_order_log:
+            return {}
+        
+        total_batches = len(self.sample_order_log)
+        total_samples = sum(batch['batch_size'] for batch in self.sample_order_log)
+        
+        # 统计样本ID分布
+        id_counts = {}
+        for batch in self.sample_order_log:
+            for sample_id in batch['sample_ids']:
+                id_counts[sample_id] = id_counts.get(sample_id, 0) + 1
+        
+        return {
+            'total_batches': total_batches,
+            'total_samples': total_samples,
+            'unique_sample_ids': len(id_counts),
+            'most_frequent_samples': sorted(id_counts.items(), key=lambda x: x[1], reverse=True)[:10],
+            'average_batch_size': total_samples / total_batches if total_batches > 0 else 0
+        }

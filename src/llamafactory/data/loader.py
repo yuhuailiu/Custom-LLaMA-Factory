@@ -257,7 +257,7 @@ def _get_preprocessed_dataset(
         dataset_processor.preprocess_dataset,
         batched=True,
         batch_size=data_args.preprocessing_batch_size,
-        remove_columns=column_names,
+        remove_columns=[col for col in column_names if col not in ['id', 'sample_id', 'example_id', 'index', '_id']],
         **kwargs,
     )
 

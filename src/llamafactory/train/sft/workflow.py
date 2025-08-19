@@ -52,18 +52,39 @@ def run_sft(
     model = load_model(tokenizer, model_args, finetuning_args, training_args.do_train)
 
     if getattr(model, "is_quantized", False) and not training_args.do_train:
-        setattr(model, "_hf_peft_config_loaded", True)  # hack here: make model compatible with prediction
+        setattr(model, "_hf_pept_config_loaded", True)  # hack here: make model compatible with prediction
 
-    data_collator = SFTDataCollatorWith4DAttentionMask(
-        template=template,
-        model=model if not training_args.predict_with_generate else None,
-        pad_to_multiple_of=8 if training_args.do_train else None,  # for shift short attention
-        label_pad_token_id=IGNORE_INDEX if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id,
-        block_diag_attn=model_args.block_diag_attn,
-        attn_implementation=getattr(model.config, "_attn_implementation", None),
-        compute_dtype=model_args.compute_dtype,
-        **tokenizer_module,
-    )
+    # 检查是否使用自定义的Data Collator
+    use_custom_collator = getattr(finetuning_args, 'log_sample_order', False)
+    
+    if use_custom_collator:
+        # 使用专门的SFT Data Collator来记录样本顺序，保持所有SFT特定功能
+        from ...data import LoggingSFTDataCollator
+        data_collator = LoggingSFTDataCollator(
+            template=template,
+            model=model if not training_args.predict_with_generate else None,
+            pad_to_multiple_of=8 if training_args.do_train else None,  # for shift short attention
+            label_pad_token_id=IGNORE_INDEX if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id,
+            block_diag_attn=model_args.block_diag_attn,
+            attn_implementation=getattr(model.config, "_attn_implementation", None),
+            compute_dtype=model_args.compute_dtype,
+            log_sample_order=True,
+            log_file=f"{training_args.output_dir}/training_sample_order.log",
+            **tokenizer_module,
+        )
+        logger.info_rank0("Using LoggingSFTDataCollator with sample order logging.")
+    else:
+        # 使用默认的Data Collator
+        data_collator = SFTDataCollatorWith4DAttentionMask(
+            template=template,
+            model=model if not training_args.predict_with_generate else None,
+            pad_to_multiple_of=8 if training_args.do_train else None,  # for shift short attention
+            label_pad_token_id=IGNORE_INDEX if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id,
+            block_diag_attn=model_args.block_diag_attn,
+            attn_implementation=getattr(model.config, "_attn_implementation", None),
+            compute_dtype=model_args.compute_dtype,
+            **tokenizer_module,
+        )
 
     # Metric utils
     metric_module = {}
@@ -103,6 +124,17 @@ def run_sft(
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
         trainer.save_state()
+        
+        # 如果使用了自定义Data Collator，保存详细的样本顺序日志
+        if use_custom_collator and hasattr(data_collator, 'save_detailed_log'):
+            detailed_log_file = f"{training_args.output_dir}/detailed_sample_order.json"
+            data_collator.save_detailed_log(detailed_log_file)
+            
+            # 显示统计信息
+            if hasattr(data_collator, 'get_statistics'):
+                stats = data_collator.get_statistics()
+                logger.info_rank0(f"Sample order logging statistics: {stats}")
+        
         if trainer.is_world_process_zero() and finetuning_args.plot_loss:
             keys = ["loss"]
             if isinstance(dataset_module.get("eval_dataset"), dict):

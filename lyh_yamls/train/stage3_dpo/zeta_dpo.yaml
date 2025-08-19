@@ -1,0 +1,39 @@
+### model
+model_name_or_path: /data2/lyh/output_models/qwen_7b_lora256_zeta_sft/merged
+trust_remote_code: true
+
+### method
+stage: dpo
+do_train: true
+finetuning_type: lora
+lora_rank: 32
+lora_alpha: 32
+lora_dropout: 0.0
+lora_target: q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj
+
+# DPO 专属
+pref_beta: 0.1                  # 等同于你代码里的 beta=0.1
+pref_loss: sigmoid              # 标准 DPO（sigmoid）
+
+### dataset
+dataset: ZetaTrainDPO
+template: plain
+cutoff_len: 2048
+
+### train
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 1
+learning_rate: 6.0e-5
+num_train_epochs: 1
+lr_scheduler_type: linear
+warmup_ratio: 0.1
+weight_decay: 0.0
+optim: adamw_torch
+seed: 42
+output_dir: /data2/lyh/output_models/qwen_7b_lora256_zeta_sft_dpo
+logging_steps: 1
+
+### precision
+# 同 SFT：按硬件二选一
+bf16: true
+fp16: false

@@ -769,6 +769,12 @@
       "prompt": "llm_formatted"
       }  
   },
+  "ArktsL2RTrainFullWithHeader": {
+    "file_name": "./arkts/L2R_train_fullk_with_header.jsonl",
+    "columns": {
+      "prompt": "llm_formatted"
+      }  
+  },
   "ArktsFIMTrainFull": {
     "file_name": "./arkts/L2R_train_fullk_FIM.jsonl",
     "columns": {
@@ -791,6 +797,12 @@
     "file_name": "./arkts/L2R_valid.jsonl",
     "columns": {
       "prompt": "text"
+      }  
+  },
+  "ArktsValWithHeader": {
+    "file_name": "./arkts/L2R_valid_with_header.jsonl",
+    "columns": {
+      "prompt": "llm_formatted"
       }  
   },
   "TypeScriptVal":{
@@ -846,5 +858,29 @@
     "columns": {
       "prompt": "text"
       }  
+  },
+  "ZetaTrainSFT":{
+    "file_name": "zeta_train_io_eos.jsonl",
+    "columns": {
+      "prompt": "input",
+      "response": "output",
+      "index": "index"
+      }  
+  },
+  "ZetaEvalSFT":{
+    "file_name": "zeta_eval_io_eos.jsonl",
+    "columns": {
+      "prompt": "input",
+      "response": "output"
+      }  
+  },
+  "ZetaTrainDPO":{
+    "file_name": "zeta_dpo.jsonl",
+    "ranking": true,
+    "columns": {
+      "prompt": "prompt",
+      "chosen": "chosen",
+      "rejected": "rejected"
+      }
   }
 }

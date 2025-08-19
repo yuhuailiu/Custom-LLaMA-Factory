@@ -119,6 +119,15 @@ class AlpacaDatasetConverter(DatasetConverter):
         else:  # unsupervised
             response = []
 
+        # Extract a stable id, if present in the raw example
+        example_id = (
+            example.get("_id")
+            or example.get("id")
+            or example.get("sample_id")
+            or example.get("example_id")
+            or example.get("index")
+        )
+
         output = {
             "_prompt": prompt,
             "_response": response,
@@ -128,6 +137,8 @@ class AlpacaDatasetConverter(DatasetConverter):
             "_videos": self._find_medias(example[self.dataset_attr.videos]) if self.dataset_attr.videos else None,
             "_audios": self._find_medias(example[self.dataset_attr.audios]) if self.dataset_attr.audios else None,
         }
+        if example_id is not None:
+            output["_id"] = example_id
         return output
 
 
@@ -215,6 +226,15 @@ class SharegptDatasetConverter(DatasetConverter):
             prompt = aligned_messages[:-1]
             response = aligned_messages[-1:]
 
+        # Extract a stable id, if present in the raw example
+        example_id = (
+            example.get("_id")
+            or example.get("id")
+            or example.get("sample_id")
+            or example.get("example_id")
+            or example.get("index")
+        )
+
         output = {
             "_prompt": prompt,
             "_response": response,
@@ -224,6 +244,8 @@ class SharegptDatasetConverter(DatasetConverter):
             "_videos": self._find_medias(example[self.dataset_attr.videos]) if self.dataset_attr.videos else None,
             "_audios": self._find_medias(example[self.dataset_attr.audios]) if self.dataset_attr.audios else None,
         }
+        if example_id is not None:
+            output["_id"] = example_id
         return output
 
 

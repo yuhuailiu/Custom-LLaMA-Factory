@@ -97,6 +97,21 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
             return torch.utils.data.SequentialSampler(self.train_dataset)
 
         return super()._get_train_sampler(*args, **kwargs)
+    
+    def get_custom_data_collator(self, log_sample_order: bool = True, log_file: str = None) -> "CustomDataCollatorWithLogging":
+        """获取自定义的Data Collator，用于记录样本顺序"""
+        from ...data import CustomDataCollatorWithLogging
+        
+        if log_file is None:
+            log_file = f"{self.args.output_dir}/training_sample_order.log"
+        
+        return CustomDataCollatorWithLogging(
+            template=self.template if hasattr(self, 'template') else None,
+            tokenizer=self.tokenizer,
+            label_pad_token_id=self.tokenizer.pad_token_id,
+            log_sample_order=log_sample_order,
+            log_file=log_file
+        )
 
     @override
     def compute_loss(self, model, inputs, *args, **kwargs):

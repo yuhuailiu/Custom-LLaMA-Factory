@@ -89,6 +89,21 @@ class SupervisedDatasetProcessor(DatasetProcessor):
         # build inputs with format `<bos> X Y <eos>` and labels with format `<ignore> ... <ignore> Y <eos>`
         # for multiturn examples, we only mask the prompt part in each prompt-response pair.
         model_inputs = defaultdict(list)
+        
+        # Keep the original ID information
+        if "_id" in examples:
+            model_inputs["_id"] = examples["_id"]
+        elif "id" in examples:
+            model_inputs["_id"] = examples["id"]
+        elif "sample_id" in examples:
+            model_inputs["_id"] = examples["sample_id"]
+        elif "example_id" in examples:
+            model_inputs["_id"] = examples["example_id"]
+        elif "index" in examples:
+            model_inputs["_id"] = examples["index"]
+        else:
+            pass
+        
         for i in range(len(examples["_prompt"])):
             if len(examples["_prompt"][i]) % 2 != 1 or len(examples["_response"][i]) != 1:
                 logger.warning_rank0(

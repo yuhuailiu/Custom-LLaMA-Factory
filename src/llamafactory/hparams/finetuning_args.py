@@ -444,6 +444,10 @@ class FinetuningArguments(
         default=False,
         metadata={"help": "Whether or not to disable the shuffling of the training set."},
     )
+    log_sample_order: bool = field(
+        default=False,
+        metadata={"help": "Whether or not to log the order of samples during training for debugging and reproducibility."},
+    )
     early_stopping_steps: Optional[int] = field(
         default=None,
         metadata={"help": "Number of steps to stop training if the `metric_for_best_model` does not improve."},
