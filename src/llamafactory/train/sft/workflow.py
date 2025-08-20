@@ -16,6 +16,7 @@
 # limitations under the License.
 
 from typing import TYPE_CHECKING, Optional
+import os
 
 from ...data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_template_and_fix_tokenizer
 from ...extras.constants import IGNORE_INDEX
@@ -47,6 +48,10 @@ def run_sft(
 ):
     tokenizer_module = load_tokenizer(model_args)
     tokenizer = tokenizer_module["tokenizer"]
+    
+    # Control whether to keep `_id` through the pipeline
+    os.environ["LLF_KEEP_ID"] = "1" if getattr(finetuning_args, "log_sample_order", False) else "0"
+
     template = get_template_and_fix_tokenizer(tokenizer, data_args)
     dataset_module = get_dataset(template, model_args, data_args, training_args, stage="sft", **tokenizer_module)
     model = load_model(tokenizer, model_args, finetuning_args, training_args.do_train)

@@ -137,7 +137,8 @@ class AlpacaDatasetConverter(DatasetConverter):
             "_videos": self._find_medias(example[self.dataset_attr.videos]) if self.dataset_attr.videos else None,
             "_audios": self._find_medias(example[self.dataset_attr.audios]) if self.dataset_attr.audios else None,
         }
-        if example_id is not None:
+        import os as _os
+        if _os.environ.get("LLF_KEEP_ID", "0") == "1" and example_id is not None:
             output["_id"] = example_id
         return output
 
@@ -244,7 +245,8 @@ class SharegptDatasetConverter(DatasetConverter):
             "_videos": self._find_medias(example[self.dataset_attr.videos]) if self.dataset_attr.videos else None,
             "_audios": self._find_medias(example[self.dataset_attr.audios]) if self.dataset_attr.audios else None,
         }
-        if example_id is not None:
+        import os as _os
+        if _os.environ.get("LLF_KEEP_ID", "0") == "1" and example_id is not None:
             output["_id"] = example_id
         return output
 

@@ -90,19 +90,8 @@ class SupervisedDatasetProcessor(DatasetProcessor):
         # for multiturn examples, we only mask the prompt part in each prompt-response pair.
         model_inputs = defaultdict(list)
         
-        # Keep the original ID information
-        if "_id" in examples:
-            model_inputs["_id"] = examples["_id"]
-        elif "id" in examples:
-            model_inputs["_id"] = examples["id"]
-        elif "sample_id" in examples:
-            model_inputs["_id"] = examples["sample_id"]
-        elif "example_id" in examples:
-            model_inputs["_id"] = examples["example_id"]
-        elif "index" in examples:
-            model_inputs["_id"] = examples["index"]
-        else:
-            pass
+        # note: do NOT copy the whole id column directly; we must append per valid example
+        # because some examples may be dropped during preprocessing.
         
         for i in range(len(examples["_prompt"])):
             if len(examples["_prompt"][i]) % 2 != 1 or len(examples["_response"][i]) != 1:
@@ -126,6 +115,23 @@ class SupervisedDatasetProcessor(DatasetProcessor):
             model_inputs["images"].append(examples["_images"][i])
             model_inputs["videos"].append(examples["_videos"][i])
             model_inputs["audios"].append(examples["_audios"][i])
+            
+            # append example id per valid example if present
+            from os import environ as _env
+            if _env.get("LLF_KEEP_ID", "0") == "1":
+                example_id = None
+                if "_id" in examples:
+                    example_id = examples["_id"][i]
+                elif "id" in examples:
+                    example_id = examples["id"][i]
+                elif "sample_id" in examples:
+                    example_id = examples["sample_id"][i]
+                elif "example_id" in examples:
+                    example_id = examples["example_id"][i]
+                elif "index" in examples:
+                    example_id = examples["index"][i]
+                if example_id is not None:
+                    model_inputs["_id"].append(example_id)
 
         return model_inputs
 
