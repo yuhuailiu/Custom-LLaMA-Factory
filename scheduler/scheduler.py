@@ -118,18 +118,29 @@ class JobScheduler:
         return None
 
     @staticmethod
-    def _parse_yaml_command(task_str: str) -> tuple[str, str, str]:
-        """Parse incoming task string for command, yaml path, and devices.
+    def _parse_yaml_command(task_str: str) -> tuple[str, str, str, bool]:
+        """Parse incoming task string for command, yaml path, devices, and eval flag.
 
         Accepted formats:
-        - "path/to/config.yaml" -> assumes command 'train', default devices
-        - "path/to/config.yaml@0,1,2,3" -> assumes command 'train', specified devices
-        - "train:/abs/path.yaml" -> default devices
-        - "train:/abs/path.yaml@0,1,2,3" -> specified devices
-        - "eval:/abs/path.yaml@0,1" -> specified devices
+        - "path/to/config.yaml" -> assumes command 'train', default devices, eval enabled
+        - "path/to/config.yaml@0,1,2,3" -> assumes command 'train', specified devices, eval enabled
+        - "path/to/config.yaml@0,1,2,3#no_eval" -> assumes command 'train', specified devices, eval disabled
+        - "train:/abs/path.yaml" -> default devices, eval enabled
+        - "train:/abs/path.yaml@0,1,2,3" -> specified devices, eval enabled
+        - "train:/abs/path.yaml@0,1,2,3#no_eval" -> specified devices, eval disabled
+        - "eval:/abs/path.yaml@0,1" -> specified devices, eval enabled
         """
         task = task_str.strip()
         devices = ""  # Empty means use default
+        eval_enabled = True  # Default to enabled
+        
+        # Check for eval flag with #
+        if '#' in task:
+            task, eval_flag = task.rsplit('#', 1)
+            eval_flag = eval_flag.strip()
+            if eval_flag == 'no_eval':
+                eval_enabled = False
+            # Ignore other flags for now
         
         # Check for devices specification with @
         if '@' in task:
@@ -137,14 +148,14 @@ class JobScheduler:
             devices = devices.strip()
         
         if task.lower().endswith('.yaml'):
-            return 'train', task, devices
+            return 'train', task, devices, eval_enabled
         if ':' in task:
             prefix, path = task.split(':', 1)
             prefix = prefix.strip().lower()
             path = path.strip()
             if prefix in {'train', 'eval'}:
-                return prefix, path, devices
-        raise ValueError("Unrecognized YAML task format. Use '/path/to.yaml[@devices]' or 'train:/path/to.yaml[@devices]' or 'eval:/path/to.yaml[@devices]'.")
+                return prefix, path, devices, eval_enabled
+        raise ValueError("Unrecognized YAML task format. Use '/path/to.yaml[@devices][#no_eval]' or 'train:/path.yaml[@devices][#no_eval]' or 'eval:/path.yaml[@devices]'.")
 
     @staticmethod
     def _build_job_env(output_dir: str, devices: str = "") -> dict:
@@ -205,12 +216,13 @@ class JobScheduler:
                     ran_yaml_path = None
                     ran_yaml_out_dir = None
                     ran_yaml_devices = ""  # devices specification
+                    eval_enabled = True # type: ignore[var-annotated]
                     # Determine job type (.sh vs. YAML task) with robust parse-first approach
                     log_file_handle = None
                     yaml_do_train = None  # type: ignore[var-annotated]
                     try:
                         # Attempt to parse as YAML task (supports 'train:/path.yaml', 'eval:/path.yaml', or '/path.yaml')
-                        command, yaml_path, devices = self._parse_yaml_command(str(script_path).strip())
+                        command, yaml_path, devices, eval_enabled = self._parse_yaml_command(str(script_path).strip())
                         is_yaml_task = True
                         ran_yaml_devices = devices
                         try:
@@ -316,22 +328,26 @@ class JobScheduler:
                                 is_train_run = True
 
                         if is_train_run and ran_yaml_out_dir:
-                            # After training: merge (for lora) and enqueue eval
+                            # After training: merge (for lora) and enqueue eval (if enabled)
                             try:
                                 self._run_merge_blocking(ran_yaml_path, ran_yaml_out_dir)
                             except Exception as me:
                                 logging.warning(f"Merge step raised exception for {ran_yaml_path}: {me}")
 
-                            try:
-                                eval_yaml_path = self._gen_eval_yaml_blocking(ran_yaml_path)
-                                if eval_yaml_path:
-                                    logging.info(f"Enqueue eval (front): {eval_yaml_path}")
-                                    # Use 'train' command to run evaluation YAML via training pipeline (do_train: false, do_eval: true)
-                                    self._put_front(f"{eval_yaml_path}")
-                                else:
-                                    logging.warning("Eval YAML generation returned empty path; skipping enqueue.")
-                            except Exception as ge:
-                                logging.warning(f"Eval YAML generation failed for {ran_yaml_path}: {ge}")
+                            # Only run evaluation if eval is enabled
+                            if eval_enabled:
+                                try:
+                                    eval_yaml_path = self._gen_eval_yaml_blocking(ran_yaml_path)
+                                    if eval_yaml_path:
+                                        logging.info(f"Enqueue eval (front): {eval_yaml_path}")
+                                        # Use 'train' command to run evaluation YAML via training pipeline (do_train: false, do_eval: true)
+                                        self._put_front(f"{eval_yaml_path}")
+                                    else:
+                                        logging.warning("Eval YAML generation returned empty path; skipping enqueue.")
+                                except Exception as ge:
+                                    logging.warning(f"Eval YAML generation failed for {ran_yaml_path}: {ge}")
+                            else:
+                                logging.info(f"Evaluation disabled for {ran_yaml_path} (no_eval flag set)")
 
                         if is_eval_run:
                             # After evaluation: refresh CSV summary
@@ -522,7 +538,7 @@ class JobScheduler:
                                 # Handle YAML tasks with optional device specification
                                 try:
                                     # Use the same parsing logic as worker thread
-                                    command, yaml_path, devices = self._parse_yaml_command(task)
+                                    command, yaml_path, devices, eval_enabled = self._parse_yaml_command(task)
                                     if os.path.exists(yaml_path) and yaml_path.endswith('.yaml'):
                                         accept = True
                                     else:
@@ -533,7 +549,7 @@ class JobScheduler:
                                     reason = f"Bad task format: {e}"
                             
                             if not accept and not reason:
-                                reason = "Unknown task format. Submit a .sh, .yaml[@devices], or 'train:/path.yaml[@devices]'/'eval:/path.yaml[@devices]'."
+                                reason = "Unknown task format. Submit a .sh, .yaml[@devices][#no_eval], or 'train:/path.yaml[@devices][#no_eval]'/'eval:/path.yaml[@devices]'."
 
                             if accept:
                                 self.job_queue.put(task)
@@ -564,9 +580,18 @@ class JobScheduler:
 
 # === Client 部分：增加 kill 命令 ===
 def submit_job(task_str):
-    # Accept .sh, .yaml, or prefixed command like 'train:/path.yaml', with optional @devices
+    # Accept .sh, .yaml, or prefixed command like 'train:/path.yaml', with optional @devices and #no_eval
     devices = ""
+    eval_enabled = True
     original_task = task_str
+    
+    # Extract eval flag if specified with #
+    if '#' in task_str and not task_str.endswith('.sh'):  # .sh files shouldn't have # syntax
+        task_str, eval_flag = task_str.rsplit('#', 1)
+        eval_flag = eval_flag.strip()
+        if eval_flag == 'no_eval':
+            eval_enabled = False
+        # Ignore other flags for now
     
     # Extract devices if specified with @
     if '@' in task_str and not task_str.endswith('.sh'):  # .sh files shouldn't have @ syntax
@@ -588,7 +613,7 @@ def submit_job(task_str):
         if not os.path.exists(abs_path):
             print(f"❌ Error: YAML '{abs_path}' not found.")
             return
-        payload = abs_path + (f"@{devices}" if devices else "")
+        payload = abs_path + (f"@{devices}" if devices else "") + (f"#no_eval" if not eval_enabled else "")
     elif ':' in task_str:
         prefix, path = task_str.split(':', 1)
         path = path.strip()
@@ -599,9 +624,9 @@ def submit_job(task_str):
         if not os.path.exists(abs_path) or not abs_path.endswith('.yaml'):
             print(f"❌ Error: YAML '{abs_path}' not found or not a .yaml file.")
             return
-        payload = f"{prefix}:{abs_path}" + (f"@{devices}" if devices else "")
+        payload = f"{prefix}:{abs_path}" + (f"@{devices}" if devices else "") + (f"#no_eval" if not eval_enabled else "")
     else:
-        print("❌ Error: Unsupported task. Provide a .sh, .yaml[@devices], or 'train:/path.yaml[@devices]'/'eval:/path.yaml[@devices]'.")
+        print("❌ Error: Unsupported task. Provide a .sh, .yaml[@devices][#no_eval], or 'train:/path.yaml[@devices][#no_eval]'/'eval:/path.yaml[@devices]'.")
         return
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -637,7 +662,7 @@ if __name__ == '__main__':
     subparsers = parser.add_subparsers(dest='command', required=True)
     subparsers.add_parser('start', help='Start the scheduler service in the foreground.')
     submit_parser = subparsers.add_parser('submit', help='Submit a shell script or a YAML task to the queue.')
-    submit_parser.add_argument('task', type=str, help="Path to .sh/.yaml[@devices], or 'train:/abs/config.yaml[@devices]'/'eval:/abs/config.yaml[@devices]'. Use @0,1,2,3 to specify device IDs.")
+    submit_parser.add_argument('task', type=str, help="Path to .sh/.yaml[@devices][#no_eval], or 'train:/abs/config.yaml[@devices][#no_eval]'/'eval:/abs/config.yaml[@devices]'. Use @0,1,2,3 to specify device IDs. Use #no_eval to disable evaluation after training.")
     subparsers.add_parser('status', help='Check the current status of the scheduler.')
     subparsers.add_parser('kill', help='Terminate the currently running job.')  # Added kill
 
