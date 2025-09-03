@@ -715,6 +715,18 @@
     },
     "folder": "python"
   },
+  "ArkTSPretrain50kTrain":{
+    "file_name": "arkts/full_clean_5w_rm_leak.jsonl",
+    "columns": {
+      "prompt": "text"
+      }  
+  },
+  "ArkTSPretrain50kAPI12":{
+    "file_name": "arkts/api_ver_L2R_train_fullk_filtered12.jsonl",
+    "columns": {
+      "prompt": "llm_formatted"
+      }  
+  },
   "ArkTSPretrain80kTrain":{
     "file_name": "arkts_full_cleaned_80k_train.json",
     "columns": {
@@ -767,6 +779,12 @@
     "file_name": "./arkts/L2R_train_fullk.jsonl",
     "columns": {
       "prompt": "llm_formatted"
+      }  
+  },
+  "ArktsL2RTrain50K_terminal_68K": {
+    "file_name": "arkts/full_clean_5w_terminal68k_dedup_rm_leak_formatted.jsonl",
+    "columns": {
+      "prompt": "text"
       }  
   },
   "ArktsL2RTrainFullWithHeader": {
@@ -859,6 +877,27 @@
       "prompt": "text"
       }  
   },
+  "DZ_203_SFT":{
+    "file_name": "arkts/dz_sft_203.jsonl",
+    "columns": {
+      "prompt": "input",
+      "response": "output"
+      }  
+  },
+  "DZ_203_SFT_UNIFIED":{
+    "file_name": "arkts/dz_sft_203_unified.jsonl",
+    "columns": {
+      "prompt": "input",
+      "response": "output"
+      }  
+  },
+  "TEST_SFT_0825_LINE":{
+    "file_name": "arkts/0825_sft_test.jsonl",
+    "columns": {
+      "prompt": "input",
+      "response": "output"
+      }  
+  },
   "ZetaTrainSFT":{
     "file_name": "zeta_train_io_eos.jsonl",
     "columns": {
@@ -881,6 +920,90 @@
       "prompt": "prompt",
       "chosen": "chosen",
       "rejected": "rejected"
+      }
+  },
+  "Language_C":{
+    "file_name": "general/c.jsonl",
+    "columns": {
+      "prompt": "content"
+      }
+  },
+  "Language_Cpp":{
+    "file_name": "general/cpp.jsonl",
+    "columns": {
+      "prompt": "content"
+      }
+  },
+  "General_Documentation":{
+    "file_name": "general/documentation.jsonl",
+    "columns": {
+      "prompt": "content"
+      }
+  },
+  "General_Git_Commits_Cleaned":{
+    "file_name": "general/git-commits-cleaned.jsonl",
+    "columns": {
+      "prompt": "content"
+      }
+  },
+  "General_Github_Issues_Filtered_Structured":{
+    "file_name": "general/github-issues-filtered-structured.jsonl",
+    "columns": {
+      "prompt": "content"
+      }
+  },
+  "Language_Go":{
+    "file_name": "general/go.jsonl",
+    "columns": {
+      "prompt": "content"
+      }
+  },
+  "General_Issues":{
+    "file_name": "general/issues.jsonl",
+    "columns": {
+      "prompt": "content"
+      }
+  },
+  "Language_Java":{
+    "file_name": "general/java.jsonl",
+    "columns": {
+      "prompt": "content"
+      }
+  },
+  "Language_JavaScript":{
+    "file_name": "general/javascript.jsonl",
+    "columns": {
+      "prompt": "content"
+      }
+  },
+  "Language_Python":{
+    "file_name": "general/filtered_starcode_py_train_head100k.jsonl",
+    "columns": {
+      "prompt": "content"
+      }
+  },
+  "Language_Ruby":{
+    "file_name": "general/ruby.jsonl",
+    "columns": {
+      "prompt": "content"
+      }
+  },
+  "General_StackOverflow":{
+    "file_name": "general/stackoverflow.jsonl",
+    "columns": {
+      "prompt": "content"
+      }
+  },
+  "General_Wikipedia":{
+    "file_name": "general/wikipedia.jsonl",
+    "columns": {
+      "prompt": "content"
+      }
+  },
+  "General_LHQ":{
+    "file_name": "general/lhq.jsonl",
+    "columns": {
+      "prompt": "content"
       }
   }
 }

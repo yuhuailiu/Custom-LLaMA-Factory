@@ -177,3 +177,13 @@ wandb/
 swanlog/
 generated_predictions.jsonl
 predictions_score.json
+lyh_yamls/train/stage2_sft/0829_API/zeta_dz_sft_xw15e-4-1e-5.yaml
+data/arkts/dz_sft_203.jsonl
+data/arkts/dz_sft_203_unified.jsonl
+data/arkts/0825_sft_test.jsonl
+data/arkts_full_cleaned_80k_mixture.json
+data/arkts_full_cleaned_80k_test.json
+data/arkts_full_cleaned_80k_train.json
+data/arkts_full_cleaned_80k.json
+
+scheduler-frontend/

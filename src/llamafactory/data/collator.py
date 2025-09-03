@@ -349,8 +349,14 @@ class CustomDataCollatorWithLogging(MultiModalDataCollatorForSeq2Seq):
         if self.log_sample_order:
             self._log_batch_info(features)
         
+        # 从features中移除_id字段，避免tokenizer尝试将其转换为tensor
+        cleaned_features = []
+        for feature in features:
+            cleaned_feature = {k: v for k, v in feature.items() if k != '_id'}
+            cleaned_features.append(cleaned_feature)
+        
         # 调用父类方法处理数据
-        return super().__call__(features)
+        return super().__call__(cleaned_features)
     
     def _log_batch_info(self, features: list[dict[str, Any]]) -> None:
         """记录当前batch的样本信息"""
@@ -574,8 +580,14 @@ class LoggingSFTDataCollator(SFTDataCollatorWith4DAttentionMask):
         if self.log_sample_order:
             self._log_batch_info(features)
         
+        # 从features中移除_id字段，避免tokenizer尝试将其转换为tensor
+        cleaned_features = []
+        for feature in features:
+            cleaned_feature = {k: v for k, v in feature.items() if k != '_id'}
+            cleaned_features.append(cleaned_feature)
+        
         # 调用父类方法处理数据（包括4D注意力掩码等SFT特定功能）
-        return super().__call__(features)
+        return super().__call__(cleaned_features)
     
     def _log_batch_info(self, features: list[dict[str, Any]]) -> None:
         """记录当前batch的样本信息"""

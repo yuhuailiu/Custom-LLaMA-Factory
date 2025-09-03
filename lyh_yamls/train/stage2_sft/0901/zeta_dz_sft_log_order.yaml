@@ -1,5 +1,6 @@
+
 ### model
-model_name_or_path: /data2/lyh/base_model/Qwen2.5-Coder-7B
+model_name_or_path: /data2/lyh/output_models/qwen_7b_lora256_alpha256_pretrainxw/merged
 trust_remote_code: true
 
 ### method
@@ -9,20 +10,20 @@ finetuning_type: lora
 lora_rank: 256
 lora_alpha: 256
 lora_target: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-deepspeed: examples/deepspeed/ds_z3_config.json
-log_sample_order: false
+# deepspeed: examples/deepspeed/ds_z3_config.json
+log_sample_order: true
 
 ### dataset
-dataset: ZetaTrainSFT, ZetaEvalSFT
+dataset: DZ_203_SFT, ZetaTrainSFT
 template: plain
 cutoff_len: 2048
 # max_samples: 1000000
 overwrite_cache: true
 preprocessing_num_workers: 16
-dataloader_num_workers: 4
+dataloader_num_workers: 0
 
 ### output
-output_dir: /data2/lyh/output_models/qwen_7b_lora256_zeta_sft
+output_dir: /data2/lyh/output_models/qwen_7b_pretrainxw_zeta_dz_sft_log_order
 logging_steps: 5
 plot_loss: true
 save_steps: 500
@@ -30,14 +31,14 @@ overwrite_output_dir: true
 save_only_model: false
 report_to: tensorboard
 
-### train
-per_device_train_batch_size: 1
-gradient_accumulation_steps: 8
+### train on 1 npu
+per_device_train_batch_size: 8
+gradient_accumulation_steps: 1
 learning_rate: 2.0e-4
-max_steps: 60
+max_steps: 90
 lr_scheduler_type: linear
 weight_decay: 0.01
-optim: adamw_torch
+# optim: adamw_torch
 bf16: true
 ddp_timeout: 180000000
 resume_from_checkpoint: null

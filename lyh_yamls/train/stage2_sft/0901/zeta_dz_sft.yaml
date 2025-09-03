@@ -1,5 +1,6 @@
+
 ### model
-model_name_or_path: /data2/lyh/base_model/Qwen2.5-Coder-7B
+model_name_or_path: /data2/lyh/output_models/qwen_7b_lora256_alpha256_pretrainxw/merged
 trust_remote_code: true
 
 ### method
@@ -13,7 +14,7 @@ deepspeed: examples/deepspeed/ds_z3_config.json
 log_sample_order: false
 
 ### dataset
-dataset: ZetaTrainSFT, ZetaEvalSFT
+dataset: DZ_203_SFT, ZetaTrainSFT
 template: plain
 cutoff_len: 2048
 # max_samples: 1000000
@@ -22,7 +23,7 @@ preprocessing_num_workers: 16
 dataloader_num_workers: 4
 
 ### output
-output_dir: /data2/lyh/output_models/qwen_7b_lora256_zeta_sft
+output_dir: /data2/lyh/output_models/qwen_7b_pretrainxw_zeta_dz_sft_2e4-8e5
 logging_steps: 5
 plot_loss: true
 save_steps: 500
@@ -30,22 +31,24 @@ overwrite_output_dir: true
 save_only_model: false
 report_to: tensorboard
 
-### train
-per_device_train_batch_size: 1
-gradient_accumulation_steps: 8
+### train on 1 npu
+per_device_train_batch_size: 8
+gradient_accumulation_steps: 1
 learning_rate: 2.0e-4
-max_steps: 60
-lr_scheduler_type: linear
+lr_scheduler_type: cosine_with_min_lr
+lr_scheduler_kwargs:
+  min_lr: 8.0e-5
+max_steps: 90
 weight_decay: 0.01
-optim: adamw_torch
+# optim: adamw_torch
 bf16: true
 ddp_timeout: 180000000
 resume_from_checkpoint: null
 seed: 42
 
 ### eval
-eval_dataset: ZetaEvalSFT
+eval_dataset: ZetaEvalSFT, TEST_SFT_0825_LINE
 eval_on_each_dataset: true
-per_device_eval_batch_size: 4
+per_device_eval_batch_size: 8
 eval_strategy: steps
-eval_steps: 5
+eval_steps: 10
