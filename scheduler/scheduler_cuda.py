@@ -189,23 +189,49 @@ class JobScheduler:
         """Build environment for llamafactory CLI to mirror our .sh runs.
 
         - FORCE_TORCHRUN=1
-        - ASCEND_RT_VISIBLE_DEVICES: use specified devices, inherit, or default to 0,1,2,3,4,5,6,7
+        - CUDA_VISIBLE_DEVICES or ASCEND_RT_VISIBLE_DEVICES: use specified devices, inherit, or default
         - SWANLAB_MODE: inherit or default to disabled
-        
+
         Args:
             output_dir: Output directory for the job
             devices: Comma-separated device IDs (e.g., "0,1,2,3"). Empty string uses default.
         """
         env = os.environ.copy()
         env.setdefault("FORCE_TORCHRUN", "1")
-        
-        # Set ASCEND_RT_VISIBLE_DEVICES based on devices parameter
+
+        # Set device environment variables based on available hardware
         if devices:
-            env["ASCEND_RT_VISIBLE_DEVICES"] = devices
-            logging.info(f"Using specified devices: {devices}")
+            # Check if CUDA is available by trying to import torch
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    env["CUDA_VISIBLE_DEVICES"] = devices
+                    logging.info(f"Using CUDA devices: {devices}")
+                elif hasattr(torch, 'npu') and torch.npu.is_available():
+                    env["ASCEND_RT_VISIBLE_DEVICES"] = devices
+                    logging.info(f"Using NPU devices: {devices}")
+                else:
+                    logging.warning(f"Neither CUDA nor NPU available, using CPU")
+            except ImportError:
+                # Fallback to ASCEND_RT_VISIBLE_DEVICES if torch not available
+                env["ASCEND_RT_VISIBLE_DEVICES"] = devices
+                logging.info(f"Using specified devices (fallback to NPU): {devices}")
         else:
-            env.setdefault("ASCEND_RT_VISIBLE_DEVICES", os.getenv("ASCEND_RT_VISIBLE_DEVICES", "0,1,2,3,4,5,6,7"))
-        
+            # Use default devices based on available hardware
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    env.setdefault("CUDA_VISIBLE_DEVICES", os.getenv("CUDA_VISIBLE_DEVICES", "0,1,2,3,4,5,6,7"))
+                    logging.info(f"Using default CUDA devices")
+                elif hasattr(torch, 'npu') and torch.npu.is_available():
+                    env.setdefault("ASCEND_RT_VISIBLE_DEVICES", os.getenv("ASCEND_RT_VISIBLE_DEVICES", "0,1,2,3,4,5,6,7"))
+                    logging.info(f"Using default NPU devices")
+                else:
+                    logging.warning(f"Neither CUDA nor NPU available, using CPU")
+            except ImportError:
+                env.setdefault("ASCEND_RT_VISIBLE_DEVICES", os.getenv("ASCEND_RT_VISIBLE_DEVICES", "0,1,2,3,4,5,6,7"))
+                logging.info(f"Using default devices (fallback to NPU)")
+
         env.setdefault("SWANLAB_MODE", os.getenv("SWANLAB_MODE", "disabled"))
         # optional: expose workdir-like hints
         env.setdefault("LLAMABOARD_WORKDIR", output_dir)

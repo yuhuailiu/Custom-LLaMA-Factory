@@ -16,14 +16,14 @@ HOST = '127.0.0.1'
 PORT = 9999
 LOG_FILE = os.path.join(SCRIPT_DIR, 'scheduler.log')
 # Merge settings
-MERGE_SCRIPT = "/data2/lyh/Custom-LLaMA-Factory/scripts/merge_lora_from_yaml.py"
+MERGE_SCRIPT = os.path.join(SCRIPT_DIR, "..", "scripts", "merge_lora_from_yaml.py")
 CONDA_ENV_FOR_MERGE = os.getenv("SCHEDULER_CONDA_ENV", "lyh-lf")
  # Eval generation and collection
-GEN_EVAL_SCRIPT = "/data2/lyh/Custom-LLaMA-Factory/scripts/gen_eval_from_train_yaml.py"
-COLLECT_EVAL_SCRIPT = "/data2/lyh/Custom-LLaMA-Factory/scripts/collect_eval_results.py"
-EVAL_RESULTS_ROOT = "/data2/lyh/eval_results"
-EVAL_TEMPLATE_PT = "/data2/lyh/Custom-LLaMA-Factory/lyh_yamls/eval/EVALUATION_TEMPLATE_PT.yaml"
-EVAL_TEMPLATE_SFT = "/data2/lyh/Custom-LLaMA-Factory/lyh_yamls/eval/EVALUATION_TEMPLATE_SFT.yaml"
+GEN_EVAL_SCRIPT = os.path.join(SCRIPT_DIR, "..", "scripts", "gen_eval_from_train_yaml.py")
+COLLECT_EVAL_SCRIPT = os.path.join(SCRIPT_DIR, "..", "scripts", "collect_eval_results.py")
+EVAL_RESULTS_ROOT = os.path.join(SCRIPT_DIR, "..", "..", "eval_results")
+EVAL_TEMPLATE_PT = os.path.join(SCRIPT_DIR, "..", "lyh_yamls", "eval", "EVALUATION_TEMPLATE_PT.yaml")
+EVAL_TEMPLATE_SFT = os.path.join(SCRIPT_DIR, "..", "lyh_yamls", "eval", "EVALUATION_TEMPLATE_SFT.yaml")
 
 logging.basicConfig(
     level=logging.INFO,

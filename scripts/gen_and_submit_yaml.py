@@ -9,12 +9,13 @@ from typing import Any, Dict, List, Tuple
 import yaml
 
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_TRAIN_TEMPLATE = \
-    "/data2/lyh/Custom-LLaMA-Factory/lyh_yamls/train/stage1_pretrain/qwen_7b_pretrain_with_ts.yaml"
+    os.path.join(SCRIPT_DIR, "..", "lyh_yamls", "train", "stage1_pretrain", "qwen_7b_pretrain_with_ts.yaml")
 DEFAULT_EVAL_TEMPLATE = \
-    "/data2/lyh/Custom-LLaMA-Factory/lyh_yamls/eval/eval_test.yaml"
+    os.path.join(SCRIPT_DIR, "..", "lyh_yamls", "eval", "eval_test.yaml")
 SCHEDULER_CLI = \
-    "/data2/lyh/Custom-LLaMA-Factory/scheduler/scheduler.py"
+    os.path.join(SCRIPT_DIR, "..", "scheduler", "scheduler.py")
 
 
 def parse_kv_overrides(pairs: List[str]) -> Dict[str, Any]:
