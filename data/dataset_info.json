@@ -891,6 +891,20 @@
       "response": "output"
       }  
   },
+  "DZ_100_SFT_MIX":{
+    "file_name": "arkts/dz_sft_100_mix_diff.jsonl",
+    "columns": {
+      "prompt": "input",
+      "response": "output"
+      }  
+  },
+  "DZ_100_SFT_LINE":{
+    "file_name": "arkts/dz_sft_100_line_diff.jsonl",
+    "columns": {
+      "prompt": "input",
+      "response": "output"
+      }  
+  },
   "TEST_SFT_0825_LINE":{
     "file_name": "arkts/0825_sft_test.jsonl",
     "columns": {
@@ -1004,6 +1018,18 @@
     "file_name": "general/lhq.jsonl",
     "columns": {
       "prompt": "content"
+      }
+  },
+  "ArktsDocEn":{
+    "file_name": "docs/raw_doc.jsonl",
+    "columns": {
+      "prompt": "text"
+      }
+  },
+  "ArktsDocZh":{
+    "file_name": "docs/raw_doc_zh-cn.jsonl",
+    "columns": {
+      "prompt": "text"
       }
   }
 }

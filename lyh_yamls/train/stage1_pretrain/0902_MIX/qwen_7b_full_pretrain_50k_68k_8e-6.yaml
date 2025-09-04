@@ -1,0 +1,50 @@
+
+### model
+model_name_or_path: /data2/lyh/base_model/Qwen2.5-Coder-7B
+trust_remote_code: true
+
+### method
+stage: pt
+do_train: true
+finetuning_type: full
+deepspeed: examples/deepspeed/ds_z3_config.json
+
+### dataset
+dataset: ArktsL2RTrain50K_terminal_68K, Language_C, Language_Cpp, Language_Go, Language_Java, Language_JavaScript, Language_Python, Language_Ruby, General_Documentation, General_Git_Commits_Cleaned, General_Github_Issues_Filtered_Structured, General_Issues, General_StackOverflow, General_Wikipedia, General_LHQ
+mix_strategy: interleave_under
+interleave_probs: [0.65, 0.025, 0.025, 0.025, 0.025, 0.025, 0.025, 0.025, 0.02, 0.035, 0.02, 0.02, 0.03, 0.03, 0.02]
+template: plain
+cutoff_len: 2048
+# max_samples: 1000000
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 4
+
+### output
+output_dir: /data2/lyh/output_models/qwen_7b_full_pretrain_50k_68k_mix_8e-6
+logging_steps: 5
+plot_loss: true
+save_steps: 700
+overwrite_output_dir: true
+save_only_model: false
+report_to: tensorboard
+
+### train
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 2
+learning_rate: 8e-6
+num_train_epochs: 1
+lr_scheduler_type: cosine
+warmup_ratio: 0.01
+bf16: true
+weight_decay: 0.01
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+seed: 42
+
+### eval
+eval_dataset: ArktsVal, TypeScriptVal
+eval_on_each_dataset: true
+per_device_eval_batch_size: 4
+eval_strategy: steps
+eval_steps: 50

@@ -1,3 +1,8 @@
-modelscope upload --repo-type dataset stefan7/fe ./data/ --token ms-84935216-6477-4ea3-8899-e4dd49a9f591
+modelscope upload --repo-type dataset stefan7/fe ./data/ --token xx
 
 obsutil cp config.json obs://bucket-wulan-123/corpus/
+
+root@115.120.55.81
+root@115.120.29.0
+
+scp -r -i Path/to/KeyPair-49fb.pem
