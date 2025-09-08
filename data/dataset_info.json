@@ -787,6 +787,18 @@
       "prompt": "text"
       }  
   },
+  "ArktsL2RTrain100M": {
+    "file_name": "arkts/terminal_L2R_train_100M_with_same_column.jsonl",
+    "columns": {
+      "prompt": "llm_formatted"
+      }  
+  },
+  "ArktsMIX64H20Train100M": {
+    "file_name": "arkts/terminal_MIX64_H20_train_100M_same_column.jsonl",
+    "columns": {
+      "prompt": "llm_formatted"
+      }  
+  },
   "ArktsL2RTrainFullWithHeader": {
     "file_name": "./arkts/L2R_train_fullk_with_header.jsonl",
     "columns": {
