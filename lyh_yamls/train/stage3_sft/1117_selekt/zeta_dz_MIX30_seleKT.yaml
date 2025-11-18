@@ -1,0 +1,58 @@
+### model
+model_name_or_path: /data/k8s/lyh/output_models/qwen_7b_full_pretrain_MIX30_gAcc_1_1106
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: full
+# deepspeed: examples/deepspeed/ds_z2_instinct.json
+deepspeed: examples/deepspeed/ds_z3_config.json
+# pure_bf16: true
+log_sample_order: false
+use_dft_loss: false
+use_selekt: true
+selekt_steps: 25
+selekt_alpha: 0.05
+
+### dataset
+dataset: DZ_203_SFT_200_CONTEXT, ZetaTrainSFT
+template: plain
+cutoff_len: 4096
+# max_samples: 1000000
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 4
+
+### output
+output_dir: /data/k8s/lyh/output_models/qwen_7b_full_pretrain_MIX30_gAcc_1_1106_zeta_dz_sft_seleKT
+logging_steps: 5
+plot_loss: true
+save_steps: 500
+overwrite_output_dir: true
+save_only_model: false
+save_strategy: 'no'
+report_to: tensorboard
+
+### train on 1 npu
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 2
+learning_rate: 2.0e-5
+max_steps: 90
+# num_train_epochs: 1
+lr_scheduler_type: linear
+weight_decay: 0.01
+# optim: adamw_torch
+bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+seed: 42
+
+### eval
+eval_dataset: ZetaEvalSFT
+eval_on_each_dataset: true
+per_device_eval_batch_size: 2
+eval_strategy: steps
+eval_steps: 50
+
+
