@@ -66,6 +66,12 @@ def _training_function(config: dict[str, Any]) -> None:
 
     callbacks.append(ReporterCallback(model_args, data_args, finetuning_args, generating_args))  # add to last
 
+    if finetuning_args.use_selekt:
+        logger.info_rank0(
+            f"SeleKT selective knowledge transfer enabled (alpha={finetuning_args.selekt_alpha}, "
+            f"steps={finetuning_args.selekt_steps})."
+        )
+
     if finetuning_args.stage == "pt":
         run_pt(model_args, data_args, training_args, finetuning_args, callbacks)
     elif finetuning_args.stage == "sft":

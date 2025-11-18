@@ -51,6 +51,21 @@ class FreezeArguments:
         },
     )
 
+@dataclass
+class SeleKtArguments:
+    r"""Arguments pertaining to the Selective Knowledge Transfer training."""
+    use_selekt: bool = field(
+        default=False,
+        metadata={"help": "Whether or not to use the SeleKt training."},
+    )
+    selekt_steps: int = field(
+        default=25,
+        metadata={"help": "The number of steps to apply SeleKt."},
+    )
+    selekt_alpha: float = field(
+        default=0.05,
+        metadata={"help": "SeleKT alpha parameter."},
+    )
 
 @dataclass
 class LoraArguments:
@@ -396,7 +411,14 @@ class SwanLabArguments:
 
 @dataclass
 class FinetuningArguments(
-    SwanLabArguments, BAdamArgument, ApolloArguments, GaloreArguments, RLHFArguments, LoraArguments, FreezeArguments
+    SwanLabArguments,
+    BAdamArgument,
+    ApolloArguments,
+    GaloreArguments,
+    RLHFArguments,
+    LoraArguments,
+    FreezeArguments,
+    SeleKtArguments,
 ):
     r"""Arguments pertaining to which techniques we are going to fine-tuning with."""
 
@@ -517,6 +539,10 @@ class FinetuningArguments(
 
             if self.pissa_init:
                 raise ValueError("`pissa_init` is only valid for LoRA training.")
+
+        if self.use_selekt:
+            if self.stage != "sft" or self.finetuning_type != "full":
+                raise ValueError("SeleKT is only supported for full-parameter SFT training.")
 
     def to_dict(self) -> dict[str, Any]:
         args = asdict(self)

@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
 import json
 import os
 import signal
@@ -19,11 +20,14 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any, Optional
 
 import torch
+import torch.distributed as dist
 import transformers
 from peft import PeftModel
+from tqdm.auto import tqdm
 from transformers import PreTrainedModel, ProcessorMixin, TrainerCallback
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length
 from transformers.utils import (
@@ -98,6 +102,19 @@ def fix_valuehead_checkpoint(
     logger.info_rank0(f"Value head model saved at: {output_dir}")
 
 
+try:
+    from deepspeed.accelerator import get_accelerator
+except ImportError:
+    def get_accelerator():
+        return torch.cuda
+
+
+try:
+    import deepspeed
+except ImportError:
+    deepspeed = None
+
+
 class FixValueHeadModelCallback(TrainerCallback):
     r"""A callback for fixing the checkpoint for valuehead models."""
 
@@ -168,6 +185,141 @@ class PissaConvertCallback(TrainerCallback):
                 model.load_adapter(pissa_backup_dir, "default", is_trainable=True)
                 model.set_adapter("default")
                 setattr(model.peft_config["default"], "init_lora_weights", init_lora_weights)
+
+
+class SelektCallback(TrainerCallback):
+    r"""A callback for applying the SeleKT selective knowledge transfer algorithm."""
+
+    def __init__(
+        self,
+        base_model_state_dict: dict[str, torch.Tensor],
+        alpha: float,
+        selekt_steps: int,
+        flush_steps: int = 1,
+    ) -> None:
+        self.base_model_state_dict = base_model_state_dict
+        self.alpha = alpha
+        self.selekt_steps = selekt_steps
+        self.flush_steps = max(1, flush_steps)
+        self.trainer = None
+
+    def set_trainer(self, trainer) -> None:
+        self.trainer = trainer
+
+    @staticmethod
+    def _sanitize_name(name: str) -> str:
+        return name.replace("module.", "").replace("_orig_mod.", "")
+
+    def _use_zero_stage3_rank0(self) -> bool:
+        if self.trainer is None or deepspeed is None or not getattr(self.trainer, "is_deepspeed_enabled", False):
+            return False
+        engine = getattr(self.trainer, "model_wrapped", None)
+        if engine is None:
+            return False
+        zero_stage = getattr(engine, "zero_optimization_stage", 0)
+        if callable(zero_stage):
+            zero_stage = zero_stage()
+        return zero_stage == 3
+
+    def _gather_context(self, param: torch.Tensor):
+        if deepspeed is not None and getattr(self.trainer, "is_deepspeed_enabled", False):
+            return deepspeed.zero.GatheredParameters(param, modifier_rank=0)
+        return nullcontext()
+
+    def _maybe_empty_cache(self) -> None:
+        accelerator = get_accelerator()
+        try:
+            accelerator.empty_cache()
+        except AttributeError:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if self.trainer is None or state.global_step == 0:
+            return
+
+        if self.flush_steps and state.global_step % self.flush_steps == 0:
+            self._maybe_empty_cache()
+            if dist.is_available() and dist.is_initialized():
+                dist.barrier()
+
+        if self.selekt_steps <= 0 or state.global_step % self.selekt_steps != 0:
+            return
+
+        local_rank = int(os.getenv("LOCAL_RANK", os.getenv("RANK", "0")))
+        print(f"SeleKT: global_step={state.global_step}, local_rank={local_rank}")
+        self._apply_selekt_in_place(local_rank)
+
+    def _apply_selekt_in_place(self, local_rank: int) -> None:
+        if dist.is_available() and dist.is_initialized():
+            dist.barrier()
+
+        model = getattr(self.trainer, "model_wrapped", getattr(self.trainer, "model", None))
+        if model is None:
+            return
+
+        rank0_only = self._use_zero_stage3_rank0()
+        with torch.no_grad():
+            for name, param in tqdm(
+                model.named_parameters(),
+                desc="SeleKT",
+                disable=(local_rank != 0),
+                leave=False,
+            ):
+                if not param.requires_grad:
+                    continue
+
+                with self._gather_context(param):
+                    # if rank0_only and local_rank != 0:
+                    #     continue
+                    if local_rank == 0:
+                        clean_name = self._sanitize_name(name)
+                        base_param = self.base_model_state_dict.get(clean_name)
+                        if base_param is None:
+                            continue
+
+                        base_param = base_param.to(device=param.device, dtype=param.dtype, non_blocking=True)
+                        delta = param.data - base_param
+
+                        topk = int(self.alpha * delta.numel())
+                        if topk <= 0:
+                            param.data.copy_(base_param)
+                            del base_param, delta
+                            continue
+
+                        topk = min(topk, delta.numel())
+                        delta_abs = delta.abs()
+                        delta_flat = delta_abs.view(-1)
+                        _, indices = torch.topk(delta_flat, topk)
+
+                        mask = torch.zeros_like(delta_flat)
+                        mask[indices] = 1
+                        mask = mask.view_as(delta)
+                        delta.mul_(mask)
+
+                        param.data.copy_(base_param + delta)
+
+                        del base_param, delta, delta_abs, delta_flat, mask, indices
+
+                if local_rank == 0 and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+
+        if dist.is_available() and dist.is_initialized():
+            dist.barrier()
+
+        for _ in range(3):
+            gc.collect()
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
+            torch.cuda.reset_peak_memory_stats()
+            if hasattr(torch.cuda, "ipc_collect"):
+                torch.cuda.ipc_collect()
+            if hasattr(torch.cuda, "reset_accumulated_memory_stats"):
+                torch.cuda.reset_accumulated_memory_stats()
+
+        self._maybe_empty_cache()
 
 
 class LogCallback(TrainerCallback):

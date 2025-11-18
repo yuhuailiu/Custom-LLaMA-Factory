@@ -15,19 +15,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import TYPE_CHECKING, Optional
 import os
+import gc
+from typing import TYPE_CHECKING, Optional
 
+import torch
+from transformers import AutoModelForCausalLM
 from ...data import SFTDataCollatorWith4DAttentionMask, get_dataset, get_template_and_fix_tokenizer
 from ...extras.constants import IGNORE_INDEX
 from ...extras.logging import get_logger
 from ...extras.misc import calculate_tps
 from ...extras.ploting import plot_loss
 from ...model import load_model, load_tokenizer
+from ..callbacks import SelektCallback
 from ..trainer_utils import create_modelcard_and_push
 from .metric import ComputeAccuracy, ComputeSimilarity, eval_logit_processor
 from .trainer import CustomSeq2SeqTrainer
 
+try:
+    import deepspeed
+except ImportError:
+    deepspeed = None
 
 if TYPE_CHECKING:
     from transformers import Seq2SeqTrainingArguments, TrainerCallback
@@ -55,6 +63,57 @@ def run_sft(
     template = get_template_and_fix_tokenizer(tokenizer, data_args)
     dataset_module = get_dataset(template, model_args, data_args, training_args, stage="sft", **tokenizer_module)
     model = load_model(tokenizer, model_args, finetuning_args, training_args.do_train)
+
+    runtime_callbacks: list["TrainerCallback"] = list(callbacks) if callbacks is not None else []
+    selekt_callback: Optional[SelektCallback] = None
+    if finetuning_args.use_selekt:
+        if not training_args.do_train:
+            raise ValueError("SeleKT requires training to be enabled.")
+
+        logger.info_rank0(
+            f"Preparing SeleKT base model snapshot (alpha={finetuning_args.selekt_alpha}, "
+            f"steps={finetuning_args.selekt_steps})."
+        )
+
+        # NOTE:
+        # - For SeleKT we only need a frozen snapshot of the *initial* base model weights.
+        # - When DeepSpeed ZeRO-3 is enabled, loading this snapshot as a trainable model can
+        #   interact badly with DeepSpeed's patched `state_dict` logic and yield empty tensors
+        #   (shape == 0) in the resulting state dict.
+        # - To avoid this, we deliberately load the base model in inference mode
+        #   (`is_trainable=False`), which bypasses those training-time patches while still
+        #   giving us the correct full-precision weights.
+        base_model = AutoModelForCausalLM.from_pretrained(model_args.model_name_or_path, torch_dtype=torch.bfloat16)
+        base_model.cpu()
+        if deepspeed is not None:
+            from deepspeed import zero
+            with zero.GatheredParameters(list(base_model.parameters()), modifier_rank=0):
+                if os.getenv("LOCAL_RANK", os.getenv("RANK", "0")) == "0":
+                    raw_sd = base_model.state_dict()
+                    base_state_dict = {
+                        k: v.detach().clone().cpu()  # 关键是 clone() + cpu()
+                        for k, v in raw_sd.items()
+                    }
+                else:
+                    base_state_dict = {}
+            # 这里可以再用 dist.broadcast / accelerate 广播给其它 rank
+        else:
+            raw_sd = base_model.state_dict()
+            base_state_dict = {k: v.detach().clone().cpu() for k, v in raw_sd.items()}
+        del base_model
+        for _ in range(3):
+            gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+
+        selekt_callback = SelektCallback(
+            base_model_state_dict=base_state_dict,
+            alpha=finetuning_args.selekt_alpha,
+            selekt_steps=finetuning_args.selekt_steps,
+        )
+        runtime_callbacks.append(selekt_callback)
+        logger.info_rank0("SeleKT callback enabled for full-parameter SFT.")
 
     if getattr(model, "is_quantized", False) and not training_args.do_train:
         setattr(model, "_hf_pept_config_loaded", True)  # hack here: make model compatible with prediction
@@ -110,12 +169,15 @@ def run_sft(
         args=training_args,
         finetuning_args=finetuning_args,
         data_collator=data_collator,
-        callbacks=callbacks,
+        callbacks=runtime_callbacks,
         gen_kwargs=gen_kwargs,
         **dataset_module,
         **tokenizer_module,
         **metric_module,
     )
+
+    if selekt_callback is not None:
+        selekt_callback.set_trainer(trainer)
 
     # Training
     if training_args.do_train:
