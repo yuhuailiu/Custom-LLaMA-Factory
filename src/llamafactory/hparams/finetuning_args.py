@@ -537,8 +537,8 @@ class FinetuningArguments(
                 raise ValueError("`pissa_init` is only valid for LoRA training.")
 
         if self.use_selekt:
-            if self.stage != "sft" or self.finetuning_type != "full":
-                raise ValueError("SeleKT is only supported for full-parameter SFT training.")
+            if self.stage not in ["sft", "pt"] or self.finetuning_type != "full":
+                raise ValueError("SeleKT is only supported for full-parameter SFT/PT training.")
 
     def to_dict(self) -> dict[str, Any]:
         args = asdict(self)

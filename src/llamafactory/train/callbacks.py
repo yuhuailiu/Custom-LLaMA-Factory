@@ -269,6 +269,10 @@ class SelektCallback(TrainerCallback):
                 if not param.requires_grad:
                     continue
 
+                # Workaround for DeepSpeed ZeRO-3 issue where active_sub_modules is not cleared after checkpointing
+                if hasattr(param, "ds_active_sub_modules") and param.ds_active_sub_modules:
+                    param.ds_active_sub_modules.clear()
+
                 with self._gather_context(param):
                     # if rank0_only and local_rank != 0:
                     #     continue
