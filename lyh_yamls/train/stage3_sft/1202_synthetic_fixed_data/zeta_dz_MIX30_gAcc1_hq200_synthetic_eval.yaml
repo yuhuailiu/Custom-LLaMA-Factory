@@ -1,0 +1,68 @@
+### model
+model_name_or_path: /data/k8s/lyh/output_models/qwen_7b_full_pretrain_MIX30_gAcc_1_1106
+trust_remote_code: true
+
+### method
+stage: sft
+do_train: true
+finetuning_type: lora
+lora_rank: 256
+lora_alpha: 256
+lora_target: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+# deepspeed: examples/deepspeed/ds_z3_config.json
+log_sample_order: false
+use_dft_loss: false
+use_adoptation_eval: true
+adoptation_eval_jsonl_path: /data/k8s/lyh/Custom-LLaMA-Factory/data/arkts/eval/0825_all_with_tag_v2_with_prompt.jsonl
+adoptation_eval_steps: 10         # 每500步评估一次
+adoptation_eval_start_step: 140     # 从第100步开始评估
+adoptation_eval_output_dir: /data/k8s/lyh/output_models/qwen_7b_full_pretrain_MIX30_gAcc_1_zeta_dz_hq200_sft_1202_synthetic_eval/  # 可选，默认使用 output_dir
+adoptation_eval_max_new_tokens: 1000
+adoptation_eval_prompt_key: prompt           # JSONL中prompt的字段名
+adoptation_eval_ground_truth_key: real_ground_truth  # JSONL中ground_truth的字段名
+adoptation_eval_fim_mode: false      # 使用FIM模式（直接比较）
+adoptation_eval_at_end: false        # 训练结束时进行最终评估
+adoptation_eval_max_input_length: 8192    # 新增：输入最大长度
+adoptation_eval_batch_size: 8              # 新增：批量生成大小
+
+### dataset
+dataset: DZ_203_SFT_200_CONTEXT, ZetaTrainSFT, HQ_100_SFT_1, HQ_100_SFT_2, ARKTS_INSTINCT_SYNTHETIC_SFT_336
+template: plain
+cutoff_len: 4096
+# max_samples: 1000000
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 4
+
+### output
+output_dir: /data/k8s/lyh/output_models/qwen_7b_full_pretrain_MIX30_gAcc_1_zeta_dz_hq200_sft_1202_synthetic_eval
+logging_steps: 5
+plot_loss: true
+save_steps: 500
+overwrite_output_dir: true
+save_only_model: false
+save_strategy: 'no'
+report_to: tensorboard
+
+### train on 1 npu
+per_device_train_batch_size: 8
+gradient_accumulation_steps: 1
+learning_rate: 2.0e-4
+# max_steps: 190
+num_train_epochs: 1.6
+lr_scheduler_type: linear
+weight_decay: 0.01
+# optim: adamw_torch
+bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+seed: 42
+
+### eval
+eval_dataset: ZetaEvalSFT
+eval_on_each_dataset: true
+per_device_eval_batch_size: 8
+eval_strategy: steps
+eval_steps: 50
+
+
