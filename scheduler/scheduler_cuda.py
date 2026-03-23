@@ -24,6 +24,9 @@ COLLECT_EVAL_SCRIPT = os.path.join(SCRIPT_DIR, "..", "scripts", "collect_eval_re
 EVAL_RESULTS_ROOT = os.path.join(SCRIPT_DIR, "..", "..", "eval_results")
 EVAL_TEMPLATE_PT = os.path.join(SCRIPT_DIR, "..", "lyh_yamls", "eval", "EVALUATION_TEMPLATE_PT.yaml")
 EVAL_TEMPLATE_SFT = os.path.join(SCRIPT_DIR, "..", "lyh_yamls", "eval", "EVALUATION_TEMPLATE_SFT.yaml")
+# SFT evaluation with external pipeline
+SFT_EVAL_SCRIPT = "/data/k8s/lyh/FE-Evaluation-Pipeline/run_pipeline_with_vllm.sh"
+SFT_EVAL_DATASET = "1226_arkts_data_to_cbg"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -401,17 +404,11 @@ class JobScheduler:
                                         logging.warning("Eval YAML generation returned empty path; skipping enqueue.")
                                 except Exception as ge:
                                     logging.warning(f"Eval YAML generation failed for {ran_yaml_path}: {ge}")
-                            elif eval_template == "SFT": # Use SFT template
+                            elif eval_template == "SFT": # Use external SFT evaluation script
                                 try:
-                                    eval_yaml_path = self._gen_eval_yaml_blocking(ran_yaml_path, template="SFT")
-                                    if eval_yaml_path:
-                                        logging.info(f"Enqueue eval (front): {eval_yaml_path}")
-                                        # Use 'train' command to run evaluation YAML via training pipeline (do_train: false, do_eval: true)
-                                        self._put_front(f"{eval_yaml_path}")
-                                    else:
-                                        logging.warning("Eval YAML generation returned empty path; skipping enqueue.")
-                                except Exception as ge:
-                                    logging.warning(f"Eval YAML generation failed for {ran_yaml_path}: {ge}")
+                                    self._run_sft_eval_blocking(ran_yaml_path, ran_yaml_out_dir)
+                                except Exception as se:
+                                    logging.warning(f"SFT evaluation failed for {ran_yaml_path}: {se}")
 
                         if is_eval_run:
                             # After evaluation: refresh CSV summary
@@ -535,6 +532,75 @@ class JobScheduler:
             logging.info(f"Collect results: {out.strip()}")
         except Exception:
             pass
+
+    def _run_sft_eval_blocking(self, yaml_path: str, out_dir: str) -> None:
+        """Run SFT evaluation using FE-Evaluation-Pipeline script (blocking).
+        
+        Args:
+            yaml_path: Path to the training YAML file
+            out_dir: Output directory of the training job
+        """
+        # 1. Extract model name from output directory
+        model_name = os.path.basename(out_dir.rstrip('/'))
+        
+        # 2. Determine model path: prefer merged directory if exists
+        merged_dir = os.path.join(out_dir, "merged")
+        if os.path.exists(merged_dir) and os.path.isdir(merged_dir):
+            model_path = merged_dir
+            logging.info(f"Using merged model directory: {model_path}")
+        else:
+            model_path = out_dir
+            logging.info(f"Merged directory not found, using output directory: {model_path}")
+        
+        # 3. Build evaluation command
+        cmd = [
+            'bash', SFT_EVAL_SCRIPT,
+            '--dataset', SFT_EVAL_DATASET,
+            '--model', model_name,
+            '--use-vllm',
+            '--vllm-model-dir', model_path
+        ]
+        
+        # 4. Set up logging
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        log_path = os.path.join(out_dir, f"sft_eval_{ts}.log")
+        logging.info(f"Starting SFT evaluation for model '{model_name}'. Command: {' '.join(cmd)}")
+        logging.info(f"SFT evaluation logs: {log_path}")
+        
+        try:
+            log_file = open(log_path, 'a', encoding='utf-8')
+        except Exception as e:
+            logging.warning(f"Cannot open SFT eval log file {log_path}: {e}")
+            log_file = None
+        
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                bufsize=1,
+                cwd=os.path.dirname(SFT_EVAL_SCRIPT),  # Run in script's directory
+            )
+            t_out = threading.Thread(target=self.log_stream, args=(proc.stdout, logging.INFO, log_file))
+            t_err = threading.Thread(target=self.log_stream, args=(proc.stderr, logging.ERROR, log_file))
+            t_out.start(); t_err.start()
+            rc = proc.wait()
+            t_out.join(); t_err.join()
+            if rc == 0:
+                logging.info(f"SFT evaluation finished successfully for model '{model_name}'.")
+            else:
+                logging.warning(f"SFT evaluation exited with code {rc} for model '{model_name}' (continuing queue).")
+        except Exception as e:
+            logging.warning(f"SFT evaluation process failed to start or crashed for model '{model_name}': {e}")
+        finally:
+            if log_file is not None:
+                try:
+                    log_file.close()
+                except Exception:
+                    pass
 
     def _put_front(self, task: str) -> None:
         """Insert a job to the front of the queue (priority)."""
