@@ -68,6 +68,49 @@ class SeleKtArguments:
     )
 
 @dataclass
+class AdoptationEvalArguments:
+    r"""Arguments pertaining to the adoptation evaluation."""
+    use_adoptation_eval: bool = field(default=False, metadata={"help": "Whether to use the adoptation evaluation."})
+    adoptation_eval_steps: int = field(
+        default=500,
+        metadata={"help": "Evaluate every N steps after start_step (e.g., adoptation_eval_steps=500 means step 500, 1000, 1500...)"},
+    )
+    adoptation_eval_start_step: int = field(default=0, metadata={"help": "The start step for adoptation evaluation."})
+    adoptation_eval_at_end: bool = field(default=True, metadata={"help": "Whether to evaluate at the end of training."})
+    adoptation_eval_jsonl_path: Optional[str] = field(
+        default=None, 
+        metadata={"help": "Path to the JSONL file containing evaluation data with 'prompt' and 'ground_truth' columns."}
+    )
+    adoptation_eval_output_dir: Optional[str] = field(
+        default=None, 
+        metadata={"help": "Directory to save evaluation results. If None, uses training output_dir."}
+    )
+    adoptation_eval_max_new_tokens: int = field(
+        default=512,
+        metadata={"help": "Maximum new tokens to generate during adoptation evaluation."}
+    )
+    adoptation_eval_prompt_key: str = field(
+        default="prompt",
+        metadata={"help": "Key name for prompt in the JSONL file."}
+    )
+    adoptation_eval_ground_truth_key: str = field(
+        default="ground_truth",
+        metadata={"help": "Key name for ground truth in the JSONL file."}
+    )
+    adoptation_eval_fim_mode: bool = field(
+        default=True,
+        metadata={"help": "Whether to use FIM mode for evaluation (direct comparison without diff preprocessing)."}
+    )
+    adoptation_eval_max_input_length: int = field(
+        default=4096,
+        metadata={"help": "Maximum input length for tokenization during adoptation evaluation."}
+    )
+    adoptation_eval_batch_size: int = field(
+        default=4,
+        metadata={"help": "Batch size for adoptation evaluation generation."}
+    )
+
+@dataclass
 class LoraArguments:
     r"""Arguments pertaining to the LoRA training."""
 
@@ -419,6 +462,7 @@ class FinetuningArguments(
     LoraArguments,
     FreezeArguments,
     SeleKtArguments,
+    AdoptationEvalArguments,
 ):
     r"""Arguments pertaining to which techniques we are going to fine-tuning with."""
 

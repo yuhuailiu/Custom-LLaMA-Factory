@@ -2005,6 +2005,6 @@ register_template(
 register_template(
     name="plain_eos",
     format_user=StringFormatter(slots=["{{content}}"]),
-    format_assistant=StringFormatter(slots=["{{content}}", {"eos_token"}, "\n"]),
+    format_assistant=StringFormatter(slots=["{{content}}", {"eos_token"}]),
     format_system=StringFormatter(slots=["{{content}}"]),
 )

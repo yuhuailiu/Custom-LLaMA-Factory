@@ -27,7 +27,7 @@ from ...extras.logging import get_logger
 from ...extras.misc import calculate_tps
 from ...extras.ploting import plot_loss
 from ...model import load_model, load_tokenizer
-from ..callbacks import SelektCallback
+from ..callbacks import SelektCallback, EvalAdoptationCallback
 from ..trainer_utils import create_modelcard_and_push
 from .metric import ComputeAccuracy, ComputeSimilarity, eval_logit_processor
 from .trainer import CustomSeq2SeqTrainer
@@ -65,6 +65,33 @@ def run_sft(
     model = load_model(tokenizer, model_args, finetuning_args, training_args.do_train)
 
     runtime_callbacks: list["TrainerCallback"] = list(callbacks) if callbacks is not None else []
+    
+    # EvalAdoptationCallback
+    adoptation_eval_callback: Optional[EvalAdoptationCallback] = None
+    if finetuning_args.use_adoptation_eval:
+        if not finetuning_args.adoptation_eval_jsonl_path:
+            raise ValueError("adoptation_eval_jsonl_path is required when use_adoptation_eval is True.")
+        
+        adoptation_eval_callback = EvalAdoptationCallback(
+            tokenizer=tokenizer,
+            jsonl_path=finetuning_args.adoptation_eval_jsonl_path,
+            eval_steps=finetuning_args.adoptation_eval_steps,
+            start_step=finetuning_args.adoptation_eval_start_step,
+            max_new_tokens=finetuning_args.adoptation_eval_max_new_tokens,
+            output_dir=finetuning_args.adoptation_eval_output_dir or training_args.output_dir,
+            prompt_key=finetuning_args.adoptation_eval_prompt_key,
+            ground_truth_key=finetuning_args.adoptation_eval_ground_truth_key,
+            eval_fim_mode=finetuning_args.adoptation_eval_fim_mode,
+            eval_at_end=finetuning_args.adoptation_eval_at_end,
+            max_input_length=finetuning_args.adoptation_eval_max_input_length,
+            eval_batch_size=finetuning_args.adoptation_eval_batch_size,
+        )
+        runtime_callbacks.append(adoptation_eval_callback)
+        logger.info_rank0(
+            f"EvalAdoptationCallback enabled: eval_steps={finetuning_args.adoptation_eval_steps}, "
+            f"start_step={finetuning_args.adoptation_eval_start_step}"
+        )
+    
     selekt_callback: Optional[SelektCallback] = None
     if finetuning_args.use_selekt:
         if not training_args.do_train:
@@ -178,6 +205,9 @@ def run_sft(
 
     if selekt_callback is not None:
         selekt_callback.set_trainer(trainer)
+    
+    if adoptation_eval_callback is not None:
+        adoptation_eval_callback.set_trainer(trainer)
 
     # Training
     if training_args.do_train:
