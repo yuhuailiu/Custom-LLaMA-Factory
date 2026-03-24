@@ -406,7 +406,7 @@ class JobScheduler:
                                     logging.warning(f"Eval YAML generation failed for {ran_yaml_path}: {ge}")
                             elif eval_template == "SFT": # Use external SFT evaluation script
                                 try:
-                                    self._run_sft_eval_blocking(ran_yaml_path, ran_yaml_out_dir)
+                                    self._run_sft_eval_blocking(ran_yaml_path, ran_yaml_out_dir, ran_yaml_devices)
                                 except Exception as se:
                                     logging.warning(f"SFT evaluation failed for {ran_yaml_path}: {se}")
 
@@ -533,13 +533,16 @@ class JobScheduler:
         except Exception:
             pass
 
-    def _run_sft_eval_blocking(self, yaml_path: str, out_dir: str) -> None:
+    def _run_sft_eval_blocking(self, yaml_path: str, out_dir: str, devices: str = "") -> None:
         """Run SFT evaluation using FE-Evaluation-Pipeline script (blocking).
-        
+
         Args:
             yaml_path: Path to the training YAML file
             out_dir: Output directory of the training job
+            devices: Comma-separated device IDs for evaluation
         """
+        # Build environment with device settings
+        env = self._build_job_env(out_dir, devices)
         # 1. Extract model name from output directory
         model_name = os.path.basename(out_dir.rstrip('/'))
         
@@ -583,6 +586,7 @@ class JobScheduler:
                 errors='replace',
                 bufsize=1,
                 cwd=os.path.dirname(SFT_EVAL_SCRIPT),  # Run in script's directory
+                env=env,  # Use environment with device settings
             )
             t_out = threading.Thread(target=self.log_stream, args=(proc.stdout, logging.INFO, log_file))
             t_err = threading.Thread(target=self.log_stream, args=(proc.stderr, logging.ERROR, log_file))
